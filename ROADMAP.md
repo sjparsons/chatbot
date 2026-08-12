@@ -62,6 +62,20 @@ cost, and finish reason to `responses`. This is what makes a regression
 attributable to a change.
 *Done when:* a turn's full cost and provenance are reconstructable from SQL.
 
+- The provider response already carries all of it. Run with `MODEL_LOG_WIRE=1`
+  to see the exact shape before designing the columns.
+- **Log the dated model id from the response** (`claude-haiku-4-5-20251001`),
+  not the alias we sent (`claude-haiku-4-5`). The alias moves; provenance that
+  moves with it is worthless.
+- Keep the `request-id` response header. It is what provider support asks for,
+  and nothing else identifies the call.
+- `usage` has four token fields, not two — `cache_creation_input_tokens` and
+  `cache_read_input_tokens` price differently, so cost needs all four. They are
+  0 until step 13, but the columns should exist before then.
+- SDK 0.68.0 does not type `stop_details`, `cache_creation`, or `service_tier`
+  even though the API returns them. Widen the response type in the gateway
+  rather than reading them back out of the log.
+
 **6. Minimal eval harness.** A handful of golden cases, run against the current
 prompt, scored. Thin is fine — the point is a baseline before behavior starts
 changing underneath.
