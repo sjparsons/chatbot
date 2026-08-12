@@ -8,6 +8,11 @@ coverage/
 .DS_Store
 .vite/
 
+# Claude Code — personal overrides and transient worktrees.
+# .claude/settings.json is shared and tracked.
+.claude/settings.local.json
+.claude/worktrees/
+
 # Local SQLite database and its WAL sidecars
 data/
 *.sqlite
