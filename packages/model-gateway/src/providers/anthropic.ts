@@ -33,12 +33,22 @@ export function createAnthropicProvider(
   config: GatewayConfig,
   { client, logger }: AnthropicProviderOptions = {},
 ): Gateway {
-  // Constructing the real client throws when no key is resolvable, which is a
-  // better failure than every turn dying with a 401 at request time.
+  // The SDK does NOT throw for a missing credential at construction — it gets
+  // as far as building headers on the first request and fails there, which
+  // turns a config mistake into a runtime error a customer sees. Refuse to
+  // start instead. It reads only these two variables: no config file, no
+  // profile, no ambient credential.
+  if (!client && !config.apiKey && !config.authToken) {
+    throw new Error(
+      "model-gateway: no credentials. Set ANTHROPIC_API_KEY, or MODEL_PROVIDER=mock to run without a model.",
+    );
+  }
+
   const model: ModelClient =
     client ??
     new Anthropic({
       apiKey: config.apiKey,
+      authToken: config.authToken,
       timeout: config.timeoutMs,
       maxRetries: config.maxRetries,
     });

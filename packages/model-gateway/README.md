@@ -23,7 +23,7 @@ change in here, not to the SSE transport or the UI.
 | `MODEL_TIMEOUT_MS`   | `60000`             | Wall clock for one provider call          |
 | `MODEL_MAX_RETRIES`  | `2`                 | Attempts per call, inside the SDK         |
 | `MODEL_LOG_PAYLOADS` | on (`0` disables)   | Print the messages sent and text returned |
-| `ANTHROPIC_API_KEY`  | —                   | Read by the SDK; absent means it throws at boot |
+| `ANTHROPIC_API_KEY`  | —                   | The only variable you must set (or `ANTHROPIC_AUTH_TOKEN`) |
 
 ## Non-obvious things
 
@@ -43,6 +43,12 @@ change in here, not to the SSE transport or the UI.
   which would hold an SSE stream open far longer than anyone waits.
 - **Haiku does not accept `effort`** — it 400s. Nor does the gateway send
   `thinking`; neither is wanted for a retail chat reply.
+- **Credentials come from the environment and nowhere else.** The SDK reads
+  `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` from the process env — there is no
+  config file, profile, or ambient credential behind it. It also does *not*
+  fail at construction when both are missing: it gets as far as building request
+  headers on the first turn. The gateway checks up front so a missing key is a
+  failed boot, not a failed customer message.
 - **The mock is a provider, not a test double.** It keeps the suite hermetic and
   `npm run dev` runnable without a key, and it logs in the same shape as a real
   turn so switching providers does not change what the dev log looks like.

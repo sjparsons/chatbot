@@ -1,5 +1,5 @@
 import { createGateway, loadConfig } from "@chatbot/model-gateway";
-import { config } from "./config.js";
+import { config, envFile } from "./config.js";
 import { openDatabase } from "./db/index.js";
 import { Repository } from "./db/repository.js";
 import { createApp } from "./server.js";
@@ -20,6 +20,7 @@ const app = createApp({
 
 const server = app.listen(config.port, () => {
   console.log(`chat-api listening on http://localhost:${config.port}`);
+  console.log(`env file: ${envFile ?? "none (using the environment as-is)"}`);
   console.log(`database: ${config.databaseUrl}`);
   // The mock ignores the model ids, so printing them would only mislead.
   console.log(

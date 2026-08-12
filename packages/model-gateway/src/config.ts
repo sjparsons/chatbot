@@ -12,6 +12,8 @@ export interface GatewayConfig {
   /** Attempts the SDK makes per call before giving up. */
   maxRetries: number;
   apiKey: string | undefined;
+  /** The SDK's other credential. Either this or `apiKey` will do. */
+  authToken: string | undefined;
   /** Print the message array sent and the text returned, per turn. */
   logPayloads: boolean;
   mockDelayMinMs: number;
@@ -62,6 +64,7 @@ export function loadConfig(
     maxRetries: int(env.MODEL_MAX_RETRIES, 2),
 
     apiKey: env.ANTHROPIC_API_KEY,
+    authToken: env.ANTHROPIC_AUTH_TOKEN,
 
     // On by default: while there is no prompt artifact and no token columns in
     // the turn log, stdout is the only way to see what the model was given.

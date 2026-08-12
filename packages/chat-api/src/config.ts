@@ -1,7 +1,12 @@
+// Must come first: it populates process.env, which this module reads below.
+import { envFile } from "./env.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Which `.env.local` was picked up, if any. Re-exported for the boot log. */
+export { envFile };
 
 function int(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10);

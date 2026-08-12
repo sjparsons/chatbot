@@ -25,6 +25,19 @@ npm run dev -w @chatbot/chat-api    # http://localhost:3001
 
 ## Configuration
 
+Copy the example at the repo root and fill in the key:
+
+```sh
+cp .env.example .env.local
+```
+
+`.env.local` is gitignored. chat-api finds it by walking up from its own source
+rather than from the working directory, so one file at the root of the main
+checkout also serves every git worktree under `.claude/worktrees/` — the boot
+log names the file it actually loaded. Real environment variables are not
+overwritten, so `ANTHROPIC_API_KEY=… npm run dev` still wins, and `ENV_FILE`
+points at a specific file.
+
 | Variable             | Default                  | Purpose                        |
 | -------------------- | ------------------------ | ------------------------------ |
 | `PORT`               | `3001`                   | Listen port                     |

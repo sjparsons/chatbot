@@ -218,6 +218,14 @@ describe("anthropic provider", () => {
     expect(error.retryable).toBe(false);
   });
 
+  it("refuses to start without credentials, rather than failing mid-turn", () => {
+    // The SDK gets as far as building request headers before it notices, which
+    // would surface as a failed turn instead of a failed boot.
+    expect(() => createAnthropicProvider(testConfig())).toThrow(
+      /no credentials/,
+    );
+  });
+
   it("logs the message array sent and the text returned", async () => {
     const events: ModelLogEvent[] = [];
     const { client } = fakeClient(() => textResponse("Yes, in medium."));

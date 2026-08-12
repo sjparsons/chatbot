@@ -11,8 +11,12 @@ Requires Node 24+ and npm 11+.
 
 ```sh
 npm install
-npm run dev     # UI at http://localhost:5173
+cp .env.example .env.local   # add your ANTHROPIC_API_KEY
+npm run dev                  # UI at http://localhost:5173
 ```
+
+`.env.local` is gitignored and is the only setup step with a secret in it. To
+run the whole stack without a key, set `MODEL_PROVIDER=mock` instead.
 
 ## Packages
 
@@ -20,9 +24,11 @@ npm run dev     # UI at http://localhost:5173
 | ------------------- | -------------------- | ---- | ------------------------------------ |
 | [`@chatbot/chat-ui`](packages/chat-ui/README.md)   | `packages/chat-ui`  | 5173 | React chat interface                 |
 | [`@chatbot/chat-api`](packages/chat-api/README.md) | `packages/chat-api` | 3001 | HTTP + SSE service, SQLite turn log  |
+| [`@chatbot/model-gateway`](packages/model-gateway/README.md) | `packages/model-gateway` | — | Provider client, timeouts, fallback, error mapping |
 
 The UI calls chat-api directly from the browser — no proxy — so chat-api allows
-CORS from the UI's origin.
+CORS from the UI's origin. chat-api depends on model-gateway as a TypeScript
+project reference, which is what keeps them building in dependency order.
 
 ## Scripts
 
@@ -55,14 +61,16 @@ list services explicitly, which is what gives each its own label and colour.
 - `tsconfig.base.json` holds the shared compiler options (strict, plus
   `noUncheckedIndexedAccess` and unused-symbol checks). Packages override only
   what they need.
-- Each package runs and tests independently. Nothing imports from a sibling yet.
+- Each package tests independently: chat-api's suite runs against the gateway's
+  mock provider, so no test needs a key or a network.
 
 ## Status
 
 UI and chat-api are wired together: replies stream over SSE, every turn lands in
-SQLite.
+SQLite, and turns go to Claude Haiku through the model gateway with the session
+transcript as context.
 
-No model yet — chat-api returns `RESPONSE` to everything after a random
-0.5–3s delay, so the streaming and pending states are exercised against
-something realistic. Model orchestration, product search, policy retrieval, and
-guardrails are not built.
+The reply still arrives as a single chunk rather than streaming token by token,
+and there is no system prompt yet — so the model does not know it is a retail
+assistant. Product search, policy retrieval, and guardrails are not built. See
+[ROADMAP.md](ROADMAP.md).
