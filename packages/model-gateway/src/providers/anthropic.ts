@@ -3,6 +3,7 @@ import type { GatewayConfig } from "../config.js";
 import { GatewayError, mapProviderError } from "../errors.js";
 import type { Logger } from "../logging.js";
 import type { Gateway, GenerateOptions, Message } from "../types.js";
+import { wireLoggingFetch } from "./wire-log.js";
 
 /**
  * The slice of the provider response the gateway reads. Narrow on purpose: the
@@ -44,6 +45,8 @@ export function createAnthropicProvider(
     );
   }
 
+  const log: Logger = logger ?? (() => {});
+
   const model: ModelClient =
     client ??
     new Anthropic({
@@ -51,9 +54,10 @@ export function createAnthropicProvider(
       authToken: config.authToken,
       timeout: config.timeoutMs,
       maxRetries: config.maxRetries,
+      // Swapping fetch is how the raw exchange gets logged; leaving it unset
+      // keeps the SDK's own default.
+      ...(config.logWire ? { fetch: wireLoggingFetch(log) } : {}),
     });
-
-  const log: Logger = logger ?? (() => {});
 
   async function complete(
     modelId: string,

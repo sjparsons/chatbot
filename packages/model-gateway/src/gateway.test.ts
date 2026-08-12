@@ -1,5 +1,5 @@
 import { APIError, APIUserAbortError } from "@anthropic-ai/sdk";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig, type GatewayConfig } from "./config.js";
 import { GatewayError } from "./errors.js";
 import type { ModelLogEvent } from "./logging.js";
@@ -8,6 +8,7 @@ import {
   type ModelClient,
   type ModelResponse,
 } from "./providers/anthropic.js";
+import { wireLoggingFetch } from "./providers/wire-log.js";
 import { createGateway } from "./index.js";
 import type { Message } from "./types.js";
 
@@ -245,6 +246,60 @@ describe("anthropic provider", () => {
       text: "Yes, in medium.",
       stopReason: "end_turn",
       usage: { inputTokens: 10, outputTokens: 5 },
+    });
+  });
+});
+
+describe("wire logging", () => {
+  const respond = () =>
+    new Response(JSON.stringify({ id: "msg_1", stop_reason: "end_turn" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("never lets the credential reach the log", async () => {
+    const events: ModelLogEvent[] = [];
+    vi.stubGlobal("fetch", async () => respond());
+
+    await wireLoggingFetch((event) => events.push(event))(
+      "https://api.anthropic.com/v1/messages",
+      {
+        method: "POST",
+        headers: {
+          "x-api-key": "sk-ant-SUPER-SECRET",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model: "claude-haiku-4-5" }),
+      },
+    );
+
+    // The blunt assertion is the one that matters: the secret appears nowhere.
+    expect(JSON.stringify(events)).not.toContain("sk-ant-SUPER-SECRET");
+
+    const request = events.find((event) => event.direction === "wire-request");
+    expect(request?.headers["x-api-key"]).toBe("«redacted»");
+    expect(request?.body).toEqual({ model: "claude-haiku-4-5" });
+
+    const response = events.find(
+      (event) => event.direction === "wire-response",
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.body).toEqual({ id: "msg_1", stop_reason: "end_turn" });
+  });
+
+  it("leaves the body readable, since the SDK still has to parse it", async () => {
+    vi.stubGlobal("fetch", async () => respond());
+
+    const result = await wireLoggingFetch(() => {})(
+      "https://api.anthropic.com/v1/messages",
+      { method: "POST" },
+    );
+
+    await expect(result.json()).resolves.toEqual({
+      id: "msg_1",
+      stop_reason: "end_turn",
     });
   });
 });

@@ -16,6 +16,8 @@ export interface GatewayConfig {
   authToken: string | undefined;
   /** Print the message array sent and the text returned, per turn. */
   logPayloads: boolean;
+  /** Also print the raw HTTP exchange with the provider. Verbose. */
+  logWire: boolean;
   mockDelayMinMs: number;
   mockDelayMaxMs: number;
 }
@@ -69,6 +71,11 @@ export function loadConfig(
     // On by default: while there is no prompt artifact and no token columns in
     // the turn log, stdout is the only way to see what the model was given.
     logPayloads: env.MODEL_LOG_PAYLOADS !== "0",
+
+    // Off by default: it prints the full request and response JSON, which is
+    // what you want when debugging the provider call and noise the rest of the
+    // time.
+    logWire: env.MODEL_LOG_WIRE === "1",
 
     mockDelayMinMs: int(env.MOCK_DELAY_MIN_MS, 500),
     mockDelayMaxMs: int(env.MOCK_DELAY_MAX_MS, 3000),

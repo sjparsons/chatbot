@@ -23,6 +23,7 @@ change in here, not to the SSE transport or the UI.
 | `MODEL_TIMEOUT_MS`   | `60000`             | Wall clock for one provider call          |
 | `MODEL_MAX_RETRIES`  | `2`                 | Attempts per call, inside the SDK         |
 | `MODEL_LOG_PAYLOADS` | on (`0` disables)   | Print the messages sent and text returned |
+| `MODEL_LOG_WIRE`     | off (`1` enables)   | Also print the raw HTTP exchange with the provider |
 | `ANTHROPIC_API_KEY`  | —                   | The only variable you must set (or `ANTHROPIC_AUTH_TOKEN`) |
 
 ## Non-obvious things
@@ -49,6 +50,18 @@ change in here, not to the SSE transport or the UI.
   fail at construction when both are missing: it gets as far as building request
   headers on the first turn. The gateway checks up front so a missing key is a
   failed boot, not a failed customer message.
+- **`MODEL_LOG_WIRE=1` swaps the SDK's `fetch`** rather than parsing anything
+  back out of it, so what it prints is the actual exchange: URL, headers, and
+  both JSON bodies. `x-api-key` and `authorization` are redacted going in —
+  there is a test asserting the key appears nowhere in the log, because this is
+  the one feature that could leak it. The response is `clone()`d before reading,
+  since a body is consumed once and the SDK still needs the original; that
+  buffers the whole response, which is fine only while calls are non-streaming.
+  Step 3 has to log SSE frames instead of draining a clone.
+- **The wire log is where the response fields the SDK doesn't type live** —
+  `stop_details`, `cache_creation`, `service_tier`, and the
+  `anthropic-ratelimit-*` headers. Useful now, and it is where the numbers for
+  step 5's cost columns will come from.
 - **The mock is a provider, not a test double.** It keeps the suite hermetic and
   `npm run dev` runnable without a key, and it logs in the same shape as a real
   turn so switching providers does not change what the dev log looks like.

@@ -24,11 +24,38 @@ export interface ModelErrorLog {
   latencyMs: number;
 }
 
-export type ModelLogEvent = ModelRequestLog | ModelResponseLog | ModelErrorLog;
+export interface ModelWireRequestLog {
+  direction: "wire-request";
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+export interface ModelWireResponseLog {
+  direction: "wire-response";
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+  latencyMs: number;
+}
+
+export type ModelLogEvent =
+  | ModelRequestLog
+  | ModelResponseLog
+  | ModelErrorLog
+  | ModelWireRequestLog
+  | ModelWireResponseLog;
 
 export type Logger = (event: ModelLogEvent) => void;
 
 export const silentLogger: Logger = () => {};
+
+const indent = (text: string): string =>
+  text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
 
 /**
  * Prints the exact message array handed to the provider and the text that came
@@ -45,6 +72,20 @@ export const consoleLogger: Logger = (event) => {
     for (const message of event.messages) {
       console.log(`  [${message.role}] ${message.content}`);
     }
+    return;
+  }
+
+  if (event.direction === "wire-request") {
+    console.log(`\n⇢ ${event.method} ${event.url}`);
+    console.log(indent(JSON.stringify(event.headers, null, 2)));
+    console.log(indent(JSON.stringify(event.body, null, 2)));
+    return;
+  }
+
+  if (event.direction === "wire-response") {
+    console.log(`⇠ ${event.status}  ${event.latencyMs}ms`);
+    console.log(indent(JSON.stringify(event.headers, null, 2)));
+    console.log(indent(JSON.stringify(event.body, null, 2)));
     return;
   }
 
