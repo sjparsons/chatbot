@@ -39,4 +39,9 @@ export type { GatewayConfig, ProviderName } from "./config.js";
 export type { GatewayErrorCode } from "./errors.js";
 export type { Logger, ModelLogEvent } from "./logging.js";
 export type { ModelClient, ModelStreamEvent } from "./providers/anthropic.js";
-export type { Gateway, GenerateOptions, Message } from "./types.js";
+export type {
+  Gateway,
+  GenerateOptions,
+  Message,
+  SystemPrompt,
+} from "./types.js";

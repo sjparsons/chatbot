@@ -2,6 +2,7 @@ import { createGateway, loadConfig } from "@chatbot/model-gateway";
 import { config, envFile } from "./config.js";
 import { openDatabase } from "./db/index.js";
 import { Repository } from "./db/repository.js";
+import { systemPrompt } from "./prompt/index.js";
 import { createApp } from "./server.js";
 
 const db = openDatabase(config.databaseUrl);
@@ -16,6 +17,7 @@ const app = createApp({
   repository,
   corsOrigins: config.corsOrigins,
   gateway,
+  systemPrompt,
 });
 
 const server = app.listen(config.port, () => {
@@ -31,6 +33,9 @@ const server = app.listen(config.port, () => {
             ? ` (fallback ${modelConfig.fallbackModel})`
             : " (no fallback)"),
   );
+  // Printed once here and on every request line below: if those two ever
+  // disagree, the prompt changed on disk while the process was up.
+  console.log(`prompt: system ${systemPrompt.version}`);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

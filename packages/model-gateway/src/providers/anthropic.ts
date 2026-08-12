@@ -29,7 +29,13 @@ export interface ModelStreamEvent {
 export interface ModelClient {
   messages: {
     stream(
-      params: { model: string; max_tokens: number; messages: Message[] },
+      params: {
+        model: string;
+        max_tokens: number;
+        messages: Message[];
+        /** Top-level on this API, not a message with `role: "system"`. */
+        system?: string;
+      },
       options?: { signal?: AbortSignal },
     ): AsyncIterable<ModelStreamEvent>;
   };
@@ -80,13 +86,14 @@ export function createAnthropicProvider(
   async function* streamModel(
     modelId: string,
     messages: Message[],
-    signal: AbortSignal | undefined,
+    { signal, system }: GenerateOptions,
   ): AsyncGenerator<string> {
     log({
       direction: "request",
       model: modelId,
       maxTokens: config.maxTokens,
       messages,
+      system: system ?? null,
     });
 
     const startedAt = Date.now();
@@ -99,7 +106,14 @@ export function createAnthropicProvider(
 
     try {
       const stream = model.messages.stream(
-        { model: modelId, max_tokens: config.maxTokens, messages },
+        {
+          model: modelId,
+          max_tokens: config.maxTokens,
+          messages,
+          // Omitted rather than sent empty when there is no prompt: the API
+          // treats "" as a system prompt, and an empty one is not nothing.
+          ...(system ? { system: system.text } : {}),
+        },
         { signal },
       );
 
@@ -179,11 +193,7 @@ export function createAnthropicProvider(
       let emitted = false;
 
       try {
-        for await (const chunk of streamModel(
-          config.model,
-          messages,
-          options.signal,
-        )) {
+        for await (const chunk of streamModel(config.model, messages, options)) {
           emitted = true;
           yield chunk;
         }
@@ -208,7 +218,7 @@ export function createAnthropicProvider(
         // model, so this is the last thing standing between a provider blip
         // and a failed turn.
         try {
-          yield* streamModel(fallback, messages, options.signal);
+          yield* streamModel(fallback, messages, options);
         } catch (fallbackError) {
           const mapped = mapProviderError(fallbackError, fallback);
           throw new GatewayError(

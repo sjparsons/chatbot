@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { GatewayError, type Gateway } from "@chatbot/model-gateway";
+import {
+  GatewayError,
+  type Gateway,
+  type SystemPrompt,
+} from "@chatbot/model-gateway";
 import { config } from "../config.js";
 import { buildContext } from "../context.js";
 import type { Repository } from "../db/repository.js";
@@ -35,7 +39,11 @@ function clientMessage(error: unknown): string {
   }
 }
 
-export function chatRouter(repository: Repository, gateway: Gateway): Router {
+export function chatRouter(
+  repository: Repository,
+  gateway: Gateway,
+  systemPrompt: SystemPrompt,
+): Router {
   const router = Router();
 
   router.post("/chat", async (req, res) => {
@@ -90,6 +98,7 @@ export function chatRouter(repository: Repository, gateway: Gateway): Router {
     try {
       for await (const delta of gateway.generate(messages, {
         signal: controller.signal,
+        system: systemPrompt,
       })) {
         if (aborted) break;
         text += delta;

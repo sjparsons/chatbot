@@ -50,6 +50,10 @@ explain the why, especially any non-obvious fix.
 - **Never await a streamed response body before handing it on** (`MODEL_LOG_WIRE`
   got this wrong): draining a clone holds every token back until the last one
   arrives, which looks exactly like streaming not working.
+- **The prompt version is a hash of the prompt text**, not a number anyone
+  maintains. Anything else that becomes part of the prompt — tool definitions
+  above all — has to go into that hash, or the version starts labelling turns
+  with instructions they did not run under.
 - **All SQL lives in `db/repository.ts`** — the Postgres move is meant to be one
   file.
 - **`createApp()` takes its repository and its gateway as arguments** so tests

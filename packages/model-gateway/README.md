@@ -5,7 +5,7 @@ timeouts, the fallback model, and one error type.
 
 ```ts
 const gateway = createGateway();
-for await (const delta of gateway.generate(messages, { signal })) { … }
+for await (const delta of gateway.generate(messages, { signal, system })) { … }
 ```
 
 `generate` is an **async generator**, which is what let token streaming land in
@@ -75,6 +75,20 @@ consumer must append rather than assume.
   `stop_details`, `cache_creation`, `service_tier`, and the
   `anthropic-ratelimit-*` headers. Useful now, and it is where the numbers for
   step 5's cost columns will come from.
+- **The system prompt is a per-call argument, not gateway config.** The gateway
+  does not know what the assistant is; chat-api owns the prompt artifact and
+  hands it over per turn. Later steps send different prompts to different models
+  through the same gateway, which config could not express. It goes on the wire
+  as the API's top-level `system` parameter — there is no `role: "system"`
+  message — and is omitted entirely when absent, since `""` is a system prompt,
+  not the lack of one.
+- **`system` carries its version with its text**, and the payload log prints the
+  version rather than the text: the same prompt every turn is not worth
+  reprinting, and the id is the handle for finding it in git. A version that
+  could be logged without the text it labels is one that can drift from it.
+- **The fallback model gets the same prompt.** A fallback answering under
+  different instructions would be a silent behaviour change logged under the
+  same version.
 - **The mock is a provider, not a test double.** It keeps the suite hermetic and
   `npm run dev` runnable without a key, and it logs in the same shape as a real
   turn so switching providers does not change what the dev log looks like. It
@@ -84,7 +98,10 @@ consumer must append rather than assume.
 
 ## Deliberately not here yet
 
-No system prompt (step 4 makes it a versioned artifact), no token/cost
-accounting (step 5 puts it in the turn log), no tool loop (phase 3). The
-payload log is the stand-in for all three: while nothing else records what the
-model saw, stdout is it.
+No token/cost accounting (step 5 puts it in the turn log) and no tool loop
+(phase 3). The payload log is the stand-in for both: while nothing else records
+what the model saw, stdout is it.
+
+The system prompt passes *through* here but does not live here — it is
+chat-api's artifact, at
+[`src/prompt/`](../chat-api/src/prompt/).

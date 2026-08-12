@@ -7,12 +7,31 @@ export interface Message {
   content: string;
 }
 
+/**
+ * The system prompt for one turn, with the id of the artifact it came from.
+ *
+ * Text and version travel together deliberately: a version that can be logged
+ * without the text it labels is a version that can drift from it.
+ */
+export interface SystemPrompt {
+  /** Identifies exactly this text. Derived from it, so it cannot lag behind. */
+  version: string;
+  text: string;
+}
+
 export interface GenerateOptions {
   /**
    * Cancels the in-flight provider call. chat-api wires this to the client
    * disconnecting, so an abandoned turn stops costing money mid-flight.
    */
   signal?: AbortSignal;
+
+  /**
+   * A per-call argument, not gateway config: the assistant's instructions are
+   * the caller's business, and later steps send different prompts to different
+   * models through the same gateway.
+   */
+  system?: SystemPrompt;
 }
 
 /**
