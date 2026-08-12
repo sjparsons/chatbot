@@ -3,8 +3,10 @@
 HTTP service the chat UI talks to. Streams replies over Server-Sent Events and
 records every turn in SQLite.
 
-The model is mocked: every message gets `RESPONSE` back after a random 0.5–3s
-delay.
+The model is mocked, but it is given a real context: the session transcript is
+assembled into a message array on every turn, and the mock echoes what it was
+handed, so `RESPONSE (5 messages in context, previous: "…")` is proof the model
+would have seen the earlier turns.
 
 ```sh
 npm run dev -w @chatbot/chat-api    # http://localhost:3001
@@ -27,6 +29,7 @@ npm run dev -w @chatbot/chat-api    # http://localhost:3001
 | `PORT`               | `3001`                   | Listen port                     |
 | `CORS_ORIGINS`       | `http://localhost:5173`  | Comma-separated allowed origins |
 | `DATABASE_URL`       | `./data/chat.sqlite`     | SQLite file, or `:memory:`      |
+| `CONTEXT_WINDOW_TURNS` | `10`                   | Turns of transcript sent to the model |
 | `MOCK_DELAY_MIN_MS`  | `500`                    | Fake delay, lower bound         |
 | `MOCK_DELAY_MAX_MS`  | `3000`                   | Fake delay, upper bound         |
 
@@ -66,7 +69,7 @@ event: start
 data: {"sessionId":"7771215b-…","requestId":"0cf2a776-…"}
 
 event: delta
-data: {"text":"RESPONSE"}
+data: {"text":"RESPONSE (3 messages in context, previous: \"…\")"}
 
 event: done
 data: {"responseId":"5b53bb03-…","latencyMs":713}
@@ -82,6 +85,27 @@ function returning a string.
 Clients use `fetch` and read the `ReadableStream`, not `EventSource` — the
 latter can only issue GETs and can't send a body. The model APIs behave the same
 way, so the shape carries over.
+
+## Context assembly
+
+`context.ts` turns a session transcript into the model's message array. The
+request is logged *before* the model is called, so it comes back as the last
+turn — the one with no response yet — and becomes the trailing user message.
+
+Two decisions worth knowing:
+
+- **Last N turns verbatim** (`CONTEXT_WINDOW_TURNS`, the current turn included),
+  windowed in SQL so the request path never loads a transcript that only grows.
+  Summarizing older turns is deferred until sessions outgrow the window.
+- **A turn that never got a successful reply is dropped whole**, rather than
+  contributing a lone user message. That keeps roles strictly alternating,
+  which is what the provider APIs expect, and an abandoned turn isn't something
+  the model ever said. Visible in the log as a `status = 'error'` response and
+  absent from the next turn's context.
+
+Turns are ordered by `created_at`, ties broken by `id` — a random UUID, so
+same-millisecond turns order arbitrarily. Real turns are a round trip apart;
+tests that insert back-to-back have to set the clock.
 
 ## Database
 
@@ -115,6 +139,7 @@ src/
   index.ts        Entry point: opens the DB, starts the server
   server.ts       Express app assembly (createApp, for tests)
   config.ts       Environment configuration
+  context.ts      Transcript -> the model's message array
   mock.ts         Stand-in for the model call
   sse.ts          Server-Sent Events writer
   routes/

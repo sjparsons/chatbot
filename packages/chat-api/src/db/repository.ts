@@ -135,9 +135,36 @@ export class Repository {
       )
       .all(sessionId) as RequestRow[];
 
+    return this.attachResponses(requests);
+  }
+
+  /**
+   * The most recent `limit` turns, still oldest first. This is the context
+   * window query — the request path must not load a whole transcript that
+   * only grows.
+   */
+  listRecentTurns(sessionId: string, limit: number): TurnRow[] {
+    const requests = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT * FROM requests
+           WHERE session_id = ?
+           ORDER BY created_at DESC, id DESC
+           LIMIT ?
+         ) ORDER BY created_at, id`,
+      )
+      .all(sessionId, Math.max(0, limit)) as RequestRow[];
+
+    return this.attachResponses(requests);
+  }
+
+  private attachResponses(requests: RequestRow[]): TurnRow[] {
+    if (requests.length === 0) return [];
+
+    const placeholders = requests.map(() => "?").join(", ");
     const responses = this.db
-      .prepare(`SELECT * FROM responses WHERE session_id = ?`)
-      .all(sessionId) as ResponseRow[];
+      .prepare(`SELECT * FROM responses WHERE request_id IN (${placeholders})`)
+      .all(...requests.map((r) => r.id)) as ResponseRow[];
 
     const byRequestId = new Map(responses.map((r) => [r.request_id, r]));
 

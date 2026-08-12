@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { openDatabase, type Db } from "./db/index.js";
@@ -113,6 +113,50 @@ describe("chat-api", () => {
 
     expect(second[0]?.data.sessionId).toBe(sessionId);
     expect(repository.listTurns(sessionId)).toHaveLength(2);
+  });
+
+  it("answers the second turn with the first turn in context", async () => {
+    const first = await readSse(await postChat({ content: "one" }));
+    const sessionId = first[0]?.data.sessionId as string;
+
+    expect(first[1]?.data.text).toBe("RESPONSE");
+
+    const second = await readSse(await postChat({ content: "two", sessionId }));
+
+    // The mock echoes what it was given, so this is the model demonstrably
+    // seeing turn 1 while answering turn 2.
+    expect(second[1]?.data.text).toBe(
+      'RESPONSE (3 messages in context, previous: "one")',
+    );
+  });
+
+  it("windows the transcript to the most recent turns", () => {
+    const session = repository.createSession();
+
+    // Turns are ordered by created_at, so give each one its own second —
+    // three real turns can't land in the same millisecond, but three
+    // back-to-back inserts can.
+    vi.useFakeTimers();
+    try {
+      ["one", "two", "three"].forEach((content, index) => {
+        vi.setSystemTime(new Date(Date.UTC(2026, 0, 1, 0, 0, index)));
+        const request = repository.createRequest(session.id, content);
+        repository.createResponse({
+          requestId: request.id,
+          sessionId: session.id,
+          content: "ok",
+          status: "ok",
+          latencyMs: 1,
+        });
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const turns = repository.listRecentTurns(session.id, 2);
+
+    expect(turns.map((turn) => turn.request.content)).toEqual(["two", "three"]);
+    expect(turns[0]?.response?.content).toBe("ok");
   });
 
   it("starts a fresh session when given an unknown id", async () => {

@@ -18,6 +18,12 @@ export const config = {
   databaseUrl:
     process.env.DATABASE_URL ?? resolve(here, "..", "data", "chat.sqlite"),
 
+  /**
+   * How many turns of transcript go into the model's context, the turn being
+   * answered included. Last N verbatim; summarizing older ones comes later.
+   */
+  contextWindowTurns: int(process.env.CONTEXT_WINDOW_TURNS, 10),
+
   /** Bounds for the mock response delay, in milliseconds. */
   mockDelayMinMs: int(process.env.MOCK_DELAY_MIN_MS, 500),
   mockDelayMaxMs: int(process.env.MOCK_DELAY_MAX_MS, 3000),

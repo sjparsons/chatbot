@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { config } from "../config.js";
+import { buildContext } from "../context.js";
 import type { Repository } from "../db/repository.js";
 import { generateResponse } from "../mock.js";
 import { SseStream } from "../sse.js";
@@ -24,6 +26,12 @@ export function chatRouter(repository: Repository): Router {
 
     const session = repository.ensureSession(sessionId);
     const request = repository.createRequest(session.id, content);
+
+    // The request is already logged, so it comes back as the last turn — the
+    // one with no response yet — and becomes the trailing user message.
+    const messages = buildContext(
+      repository.listRecentTurns(session.id, config.contextWindowTurns),
+    );
 
     const stream = new SseStream(res);
     const startedAt = Date.now();
@@ -51,7 +59,7 @@ export function chatRouter(repository: Repository): Router {
     let text = "";
 
     try {
-      for await (const delta of generateResponse(content)) {
+      for await (const delta of generateResponse(messages)) {
         if (aborted) break;
         text += delta;
         stream.send("delta", { text: delta });

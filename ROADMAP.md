@@ -11,11 +11,12 @@ Two packages, wired together and committed:
 - **chat-api** (:3001) — Express, `POST /chat` emits SSE `start`/`delta`/`done`,
   every turn logged to SQLite (`sessions`, `requests`, `responses`)
 
-No model. `mock.ts` yields `RESPONSE` after 0.5–3s. Sessions persist server-side
-and carry across turns; nothing reads them back into a model context.
+No model. `mock.ts` yields one chunk after 0.5–3s — but it now takes the
+assembled message array, so a second turn demonstrably sees the first.
 
-**Seams already in place:** `mock.ts` is an async generator (many chunks needs
-no transport change); all SQL is confined to `db/repository.ts`; `createApp()`
+**Seams already in place:** `mock.ts` is an async generator taking a message
+array (many chunks needs no transport change, and a provider client drops into
+the same signature); all SQL is confined to `db/repository.ts`; `createApp()`
 takes its repository as an argument.
 
 ## Decisions already made
@@ -31,11 +32,10 @@ takes its repository as an argument.
 
 ## Phase 1 — A real model, end to end
 
-**1. Context assembly.** Build the model's message array from the session
-transcript. Nothing does this today, so without it the model can't see turn 1
-when answering turn 2. Decide the window policy now (last N turns verbatim) and
-leave summarization for later.
-*Done when:* a second turn demonstrably references the first.
+**1. Context assembly.** ✅ Done. `context.ts` builds the message array from the
+session transcript; window policy is the last `CONTEXT_WINDOW_TURNS` turns
+verbatim (default 10), windowed in SQL. Turns without a successful reply are
+dropped so roles stay alternating. Summarization stays deferred.
 
 **2. Model gateway.** New package. Owns the provider client, model config,
 retries with backoff, timeouts, fallback model, and error mapping — including
