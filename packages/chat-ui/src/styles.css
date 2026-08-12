@@ -108,6 +108,23 @@ body {
   color: var(--muted);
 }
 
+.error {
+  margin: 0;
+  padding: 0.6rem 1.25rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-top: 1px solid #fecaca;
+  font-size: 0.875rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .error {
+    color: #fca5a5;
+    background: #2a1717;
+    border-top-color: #4c2020;
+  }
+}
+
 .composer {
   display: flex;
   gap: 0.5rem;

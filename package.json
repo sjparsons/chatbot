@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n chat-ui -c blue \"npm run dev -w @chatbot/chat-ui\"",
+    "dev": "concurrently -n chat-api,chat-ui -c green,blue \"npm run dev -w @chatbot/chat-api\" \"npm run dev -w @chatbot/chat-ui\"",
     "build": "npm run build --workspaces --if-present",
-    "start": "concurrently -n chat-ui -c blue \"npm run start -w @chatbot/chat-ui\"",
+    "start": "concurrently -n chat-api,chat-ui -c green,blue \"npm run start -w @chatbot/chat-api\" \"npm run start -w @chatbot/chat-ui\"",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

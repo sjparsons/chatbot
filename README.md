@@ -1,86 +1,68 @@
 # chatbot
 
-A retail chat assistant, built up one service at a time. Products and store
-policies are the two things it will eventually answer questions about.
+A retail chat assistant — product search and store policy questions — built up
+one service at a time.
 
-This is an npm workspaces monorepo. Each service is its own package under
-`packages/` with its own `dev` / `build` / `start` / `test` / `typecheck`
-scripts, and the root can run them individually or all at once.
+npm workspaces monorepo. Each service is a package under `packages/` with its
+own `dev` / `build` / `start` / `test` / `typecheck` scripts, runnable alone or
+all at once from the root.
 
-## Requirements
-
-- Node 24+ (developed on 24.14)
-- npm 11+
-
-## Getting started
+Requires Node 24+ and npm 11+.
 
 ```sh
-npm install     # installs every workspace
-npm run dev     # starts all services
+npm install
+npm run dev     # UI at http://localhost:5173
 ```
-
-The chat UI is then at http://localhost:5173.
-
-## Scripts
-
-Run from the repo root:
-
-| Script              | What it does                                                  |
-| ------------------- | ------------------------------------------------------------- |
-| `npm run dev`       | Starts every service in parallel, labelled per service         |
-| `npm run start`     | Same, but serving built output rather than dev servers         |
-| `npm run build`     | Builds every workspace that defines a `build` script           |
-| `npm test`          | Runs every workspace's tests                                   |
-| `npm run typecheck` | Typechecks every workspace                                     |
-
-To work on one service in isolation, target its workspace directly:
-
-```sh
-npm run dev -w @chatbot/chat-ui
-npm test -w @chatbot/chat-ui
-```
-
-`build`, `test`, and `typecheck` fan out with `--if-present`, so a package
-without one of those scripts is skipped rather than failing the run. `dev` and
-`start` use `concurrently` and list each service explicitly — that's what gives
-each one its own label and colour in the combined output.
 
 ## Packages
 
-| Package            | Directory           | Port | Description                       |
-| ------------------ | ------------------- | ---- | --------------------------------- |
-| `@chatbot/chat-ui` | `packages/chat-ui`  | 5173 | React chat interface. See its [README](packages/chat-ui/README.md). |
+| Package             | Directory            | Port | Description                          |
+| ------------------- | -------------------- | ---- | ------------------------------------ |
+| [`@chatbot/chat-ui`](packages/chat-ui/README.md)   | `packages/chat-ui`  | 5173 | React chat interface                 |
+| [`@chatbot/chat-api`](packages/chat-api/README.md) | `packages/chat-api` | 3001 | HTTP + SSE service, SQLite turn log  |
+
+The UI calls chat-api directly from the browser — no proxy — so chat-api allows
+CORS from the UI's origin.
+
+## Scripts
+
+| Script              | What it does                                     |
+| ------------------- | ------------------------------------------------ |
+| `npm run dev`       | All services in parallel, labelled per service    |
+| `npm run start`     | Same, from built output                           |
+| `npm run build`     | Builds every workspace                            |
+| `npm test`          | Runs every workspace's tests                      |
+| `npm run typecheck` | Typechecks every workspace                        |
+
+Target one service with `-w`: `npm run dev -w @chatbot/chat-ui`.
+
+`build` / `test` / `typecheck` fan out with `--if-present`, so a package missing
+one is skipped rather than failing. `dev` and `start` use `concurrently` and
+list services explicitly, which is what gives each its own label and colour.
 
 ## Adding a service
 
 1. Create `packages/<name>` with a `package.json` named `@chatbot/<name>`.
-2. Give it `dev`, `build`, `start`, `test`, and `typecheck` scripts. Anything
-   missing is skipped by the fan-out scripts, but `dev` is needed for the root
-   to start it.
-3. Extend the shared TypeScript config: `"extends": "../../tsconfig.base.json"`.
-4. Add it to the root `dev` and `start` scripts as another `concurrently` entry:
-
-   ```
-   concurrently -n chat-ui,my-service -c blue,green \
-     "npm run dev -w @chatbot/chat-ui" \
-     "npm run dev -w @chatbot/my-service"
-   ```
-
-5. Add a row to the Packages table above.
+2. Give it `dev`, `build`, `start`, `test`, `typecheck`. Only `dev` is required
+   for the root to start it.
+3. Extend the shared config: `"extends": "../../tsconfig.base.json"`.
+4. Add it to the root `dev` and `start` scripts as another `concurrently` entry.
+5. Add a row to the table above.
 
 ## Conventions
 
-- TypeScript throughout, with Python available if a component is better served
-  by it.
+- TypeScript throughout; Python where a component is better served by it.
 - `tsconfig.base.json` holds the shared compiler options (strict, plus
   `noUncheckedIndexedAccess` and unused-symbol checks). Packages override only
-  what they need — the UI adds DOM libs and JSX, for example.
-- Each package is independently runnable and testable. Nothing in `packages/`
-  imports from a sibling yet.
+  what they need.
+- Each package runs and tests independently. Nothing imports from a sibling yet.
 
 ## Status
 
-Only the chat UI exists so far, and it is standalone — sending a message
-returns a hardcoded mock response rather than calling a backend. The rest of
-the system (chat API service, model orchestration, product search, policy
-retrieval) is not built yet.
+UI and chat-api are wired together: replies stream over SSE, every turn lands in
+SQLite.
+
+No model yet — chat-api returns `RESPONSE` to everything after a random
+0.5–3s delay, so the streaming and pending states are exercised against
+something realistic. Model orchestration, product search, policy retrieval, and
+guardrails are not built.

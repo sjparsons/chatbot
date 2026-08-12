@@ -7,3 +7,9 @@ coverage/
 .env.local
 .DS_Store
 .vite/
+
+# Local SQLite database and its WAL sidecars
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
