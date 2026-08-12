@@ -13,6 +13,8 @@ export interface ModelResponseLog {
   stopReason: string | null;
   text: string;
   usage: { inputTokens: number; outputTokens: number } | null;
+  /** Time to the first text chunk. `null` if the reply carried no text. */
+  firstTokenMs: number | null;
   latencyMs: number;
 }
 
@@ -36,8 +38,16 @@ export interface ModelWireResponseLog {
   direction: "wire-response";
   status: number;
   headers: Record<string, string>;
+  /** `null` for a streaming response, whose frames arrive as `wire-chunk`s. */
   body: unknown;
   latencyMs: number;
+}
+
+/** One raw read off a streaming response body — usually a whole SSE frame. */
+export interface ModelWireChunkLog {
+  direction: "wire-chunk";
+  text: string;
+  sinceStartMs: number;
 }
 
 export type ModelLogEvent =
@@ -45,7 +55,8 @@ export type ModelLogEvent =
   | ModelResponseLog
   | ModelErrorLog
   | ModelWireRequestLog
-  | ModelWireResponseLog;
+  | ModelWireResponseLog
+  | ModelWireChunkLog;
 
 export type Logger = (event: ModelLogEvent) => void;
 
@@ -85,7 +96,14 @@ export const consoleLogger: Logger = (event) => {
   if (event.direction === "wire-response") {
     console.log(`⇠ ${event.status}  ${event.latencyMs}ms`);
     console.log(indent(JSON.stringify(event.headers, null, 2)));
-    console.log(indent(JSON.stringify(event.body, null, 2)));
+    if (event.body !== null) {
+      console.log(indent(JSON.stringify(event.body, null, 2)));
+    }
+    return;
+  }
+
+  if (event.direction === "wire-chunk") {
+    console.log(indent(`+${event.sinceStartMs}ms ${event.text.trimEnd()}`));
     return;
   }
 
@@ -93,8 +111,10 @@ export const consoleLogger: Logger = (event) => {
     const usage = event.usage
       ? `  in=${event.usage.inputTokens} out=${event.usage.outputTokens}`
       : "";
+    const ttft =
+      event.firstTokenMs === null ? "" : `  ttft=${event.firstTokenMs}ms`;
     console.log(
-      `← ${event.model}  stop=${event.stopReason ?? "none"}${usage}  ${event.latencyMs}ms`,
+      `← ${event.model}  stop=${event.stopReason ?? "none"}${usage}${ttft}  ${event.latencyMs}ms`,
     );
     console.log(`  ${event.text}`);
     return;

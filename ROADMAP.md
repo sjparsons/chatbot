@@ -13,18 +13,19 @@ Three packages, wired together and committed:
 - **model-gateway** — provider client, model config, timeouts, fallback model,
   error mapping
 
-A real model. The assembled message array goes to Claude Haiku; set
-`ANTHROPIC_API_KEY` and it runs, or `MODEL_PROVIDER=mock` for the old keyless
-behaviour. Replies still arrive as one chunk, with no system prompt and no
-token or cost columns — so the gateway's payload log is currently the only
-record of what the model was given.
+A real model, streaming. The assembled message array goes to Claude Haiku and
+the reply streams back token by token; set `ANTHROPIC_API_KEY` and it runs, or
+`MODEL_PROVIDER=mock` for the keyless version. There is still no system prompt
+and no token or cost columns — so the gateway's payload log is currently the
+only record of what the model was given.
 
 Sessions survive a refresh: the id is in the URL and the sidebar lists previous
 conversations (step 20, done early).
 
-**Seams already in place:** the gateway returns an async generator (many chunks
-needs no transport change); all SQL is confined to `db/repository.ts`;
-`createApp()` takes its repository *and* its gateway as arguments.
+**Seams already in place:** the gateway returns an async generator (streaming
+cost the transport and the UI nothing, as intended); all SQL is confined to
+`db/repository.ts`; `createApp()` takes its repository *and* its gateway as
+arguments.
 
 ## Decisions already made
 
@@ -51,10 +52,19 @@ the SDK's (it honours `retry-after`); what the gateway adds on top is the
 fallback model, tried only on retryable codes. The mock survives as a provider,
 so the suite stays hermetic. Payload logging is on by default.
 
-**3. Real streaming.** Pipe provider deltas through the gateway into the
-existing SSE `delta` events. The transport already handles many chunks; the
-mock only ever emits one, so this is untested in practice.
-*Done when:* text appears progressively in the UI.
+**3. Real streaming.** ✅ Done. The provider call is `messages.stream()`, and
+each `text_delta` is yielded straight through the gateway into the existing SSE
+`delta` events — no transport or UI change, which was the point of the async
+generator. The payload log gained time-to-first-token, the number streaming
+exists to move. Two things the streamed shape forced:
+
+- **The fallback model can no longer fire mid-reply.** Once a chunk has reached
+  the client, a second model would restart the sentence rather than continue it,
+  so a failure after the first delta is final.
+- **`MODEL_LOG_WIRE=1` no longer drains a clone of the body.** Awaiting it held
+  every token back until the last one arrived. Frames are logged as they land.
+
+The mock streams word by word too, so the transport is exercised without a key.
 
 **4. Prompt as a versioned artifact.** System prompt and tool definitions live
 in files, in git, with a version id.

@@ -18,8 +18,11 @@ export interface GatewayConfig {
   logPayloads: boolean;
   /** Also print the raw HTTP exchange with the provider. Verbose. */
   logWire: boolean;
+  /** Mock only: the pause before the first chunk. */
   mockDelayMinMs: number;
   mockDelayMaxMs: number;
+  /** Mock only: the gap between chunks once it is streaming. */
+  mockChunkDelayMs: number;
 }
 
 function int(value: string | undefined, fallback: number): number {
@@ -79,6 +82,10 @@ export function loadConfig(
 
     mockDelayMinMs: int(env.MOCK_DELAY_MIN_MS, 500),
     mockDelayMaxMs: int(env.MOCK_DELAY_MAX_MS, 3000),
+
+    // Roughly a fast model's pace, so the mock exercises the transport at a
+    // rate the UI actually has to cope with.
+    mockChunkDelayMs: int(env.MOCK_CHUNK_DELAY_MS, 20),
 
     ...overrides,
   };

@@ -5,23 +5,33 @@ import type { Logger } from "../logging.js";
 import type { Gateway, GenerateOptions, Message } from "../types.js";
 import { wireLoggingFetch } from "./wire-log.js";
 
+interface TokenUsage {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+}
+
 /**
- * The slice of the provider response the gateway reads. Narrow on purpose: the
- * real SDK `Message` satisfies it structurally, and a test double can be a
- * plain object rather than a mocked module.
+ * The slice of a streaming event the gateway reads. Narrow on purpose: the
+ * SDK's `RawMessageStreamEvent` union satisfies it structurally, and a test
+ * double can be a plain object rather than a mocked module.
+ *
+ * The four fields that matter, and where they arrive:
+ * `message_start` carries input tokens, `content_block_delta` the text,
+ * `message_delta` the stop reason and output tokens.
  */
-export interface ModelResponse {
-  content: Array<{ type: string; text?: string }>;
-  stop_reason: string | null;
-  usage?: { input_tokens: number; output_tokens: number };
+export interface ModelStreamEvent {
+  type: string;
+  delta?: { type?: string; text?: string; stop_reason?: string | null };
+  message?: { usage?: TokenUsage };
+  usage?: TokenUsage;
 }
 
 export interface ModelClient {
   messages: {
-    create(
+    stream(
       params: { model: string; max_tokens: number; messages: Message[] },
       options?: { signal?: AbortSignal },
-    ): Promise<ModelResponse>;
+    ): AsyncIterable<ModelStreamEvent>;
   };
 }
 
@@ -59,11 +69,19 @@ export function createAnthropicProvider(
       ...(config.logWire ? { fetch: wireLoggingFetch(log) } : {}),
     });
 
-  async function complete(
+  /**
+   * One streamed call to one model, yielding text as it arrives.
+   *
+   * The completion checks — refusal, no text — can only run once the stream
+   * ends, because `stop_reason` arrives in the final `message_delta`. That is
+   * sound rather than merely convenient: both conditions imply an empty reply,
+   * so nothing has been yielded by the time they throw.
+   */
+  async function* streamModel(
     modelId: string,
     messages: Message[],
     signal: AbortSignal | undefined,
-  ): Promise<string> {
+  ): AsyncGenerator<string> {
     log({
       direction: "request",
       model: modelId,
@@ -73,12 +91,43 @@ export function createAnthropicProvider(
 
     const startedAt = Date.now();
 
-    let response: ModelResponse;
+    let text = "";
+    let firstTokenMs: number | null = null;
+    let stopReason: string | null = null;
+    let inputTokens: number | null = null;
+    let outputTokens: number | null = null;
+
     try {
-      response = await model.messages.create(
+      const stream = model.messages.stream(
         { model: modelId, max_tokens: config.maxTokens, messages },
         { signal },
       );
+
+      for await (const event of stream) {
+        if (event.type === "message_start") {
+          inputTokens = event.message?.usage?.input_tokens ?? inputTokens;
+          continue;
+        }
+
+        if (event.type === "message_delta") {
+          stopReason = event.delta?.stop_reason ?? stopReason;
+          inputTokens = event.usage?.input_tokens ?? inputTokens;
+          outputTokens = event.usage?.output_tokens ?? outputTokens;
+          continue;
+        }
+
+        // Only `text_delta` is prose. `thinking_delta` and `input_json_delta`
+        // ride the same event and must not be concatenated into the reply.
+        if (event.type !== "content_block_delta") continue;
+        if (event.delta?.type !== "text_delta") continue;
+
+        const chunk = event.delta.text ?? "";
+        if (!chunk) continue;
+
+        firstTokenMs ??= Date.now() - startedAt;
+        text += chunk;
+        yield chunk;
+      }
     } catch (error) {
       const mapped = mapProviderError(error, modelId);
       log({
@@ -91,29 +140,23 @@ export function createAnthropicProvider(
       throw mapped;
     }
 
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text ?? "")
-      .join("");
-
     log({
       direction: "response",
       model: modelId,
-      stopReason: response.stop_reason,
+      stopReason,
       text,
-      usage: response.usage
-        ? {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-          }
-        : null,
+      usage:
+        inputTokens === null && outputTokens === null
+          ? null
+          : { inputTokens: inputTokens ?? 0, outputTokens: outputTokens ?? 0 },
+      firstTokenMs,
       latencyMs: Date.now() - startedAt,
     });
 
-    // A refusal is a *successful* HTTP response carrying no text, not a thrown
-    // error — so it has to be checked before reading content, and it is a
-    // decision rather than a fault, which is why it is not retryable.
-    if (response.stop_reason === "refusal") {
+    // A refusal is a *successful* response carrying no text, not a thrown
+    // error — and it is a decision rather than a fault, which is why it is not
+    // retryable.
+    if (stopReason === "refusal") {
       throw new GatewayError("refusal", "the model declined to answer", {
         model: modelId,
       });
@@ -122,12 +165,10 @@ export function createAnthropicProvider(
     if (!text) {
       throw new GatewayError(
         "upstream",
-        `model returned no text (stop_reason: ${response.stop_reason ?? "none"})`,
+        `model returned no text (stop_reason: ${stopReason ?? "none"})`,
         { model: modelId },
       );
     }
-
-    return text;
   }
 
   return {
@@ -135,15 +176,31 @@ export function createAnthropicProvider(
       messages: Message[],
       options: GenerateOptions = {},
     ): AsyncGenerator<string> {
-      let text: string;
+      let emitted = false;
 
       try {
-        text = await complete(config.model, messages, options.signal);
+        for await (const chunk of streamModel(
+          config.model,
+          messages,
+          options.signal,
+        )) {
+          emitted = true;
+          yield chunk;
+        }
+        return;
       } catch (error) {
         const failure = mapProviderError(error, config.model);
         const fallback = config.fallbackModel;
 
-        if (!failure.retryable || !fallback || fallback === config.model) {
+        // Streaming narrows when the fallback can fire: once a chunk is out the
+        // door the reader is already showing it, and a second model would
+        // restart the reply mid-sentence rather than continue it.
+        if (
+          emitted ||
+          !failure.retryable ||
+          !fallback ||
+          fallback === config.model
+        ) {
           throw failure;
         }
 
@@ -151,7 +208,7 @@ export function createAnthropicProvider(
         // model, so this is the last thing standing between a provider blip
         // and a failed turn.
         try {
-          text = await complete(fallback, messages, options.signal);
+          yield* streamModel(fallback, messages, options.signal);
         } catch (fallbackError) {
           const mapped = mapProviderError(fallbackError, fallback);
           throw new GatewayError(
@@ -166,8 +223,6 @@ export function createAnthropicProvider(
           );
         }
       }
-
-      yield text;
     },
   };
 }

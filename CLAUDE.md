@@ -39,10 +39,17 @@ explain the why, especially any non-obvious fix.
   `express.json()` drains the request stream before the handler runs, so `req`
   emits `close` immediately and flags every stream as aborted — `res.end()` then
   never fires and the client hangs. Guard with `res.writableEnded`.
-- **The gateway's `generate()` is an async generator** so that real token
-  streaming needs no transport or UI change. Keep it that way.
+- **The gateway's `generate()` is an async generator**, which is what let token
+  streaming land without a transport or UI change. Keep it that way.
 - **A model refusal is a successful response, not an exception** — HTTP 200,
-  `stop_reason: "refusal"`, empty content. Check it before reading the content.
+  `stop_reason: "refusal"`, empty content. Streamed, `stop_reason` only arrives
+  in the final `message_delta`, so the check runs after the stream ends — sound
+  because a refusal carries no text, so nothing has been yielded yet.
+- **The fallback model can't fire once a chunk has been yielded.** The client is
+  already showing it; a second model would restart the reply mid-sentence.
+- **Never await a streamed response body before handing it on** (`MODEL_LOG_WIRE`
+  got this wrong): draining a clone holds every token back until the last one
+  arrives, which looks exactly like streaming not working.
 - **All SQL lives in `db/repository.ts`** — the Postgres move is meant to be one
   file.
 - **`createApp()` takes its repository and its gateway as arguments** so tests

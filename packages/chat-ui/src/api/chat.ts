@@ -4,7 +4,7 @@ import { API_URL } from "./config";
 export interface ChatStreamHandlers {
   /** Fires once, before any text — carries the session the turn belongs to. */
   onStart?: (payload: { sessionId: string; requestId: string }) => void;
-  /** Fires per chunk. Today there is exactly one; with a real model, many. */
+  /** Fires per chunk, of which a turn has many — append, never replace. */
   onDelta?: (text: string) => void;
 }
 

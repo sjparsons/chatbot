@@ -83,8 +83,9 @@ Uses `fetch` plus a `ReadableStream` reader rather than `EventSource`, which can
 only issue GETs and can't send a body. `api/sse.ts` handles the wire format:
 events split across chunks, several events per chunk, comments, keep-alives.
 
-`onDelta` fires per chunk. There's one chunk today, but the UI appends rather
-than replaces, so real token streaming needs no changes here.
+`onDelta` fires per chunk, and the UI appends rather than replaces — which is
+why real token streaming landed without a line changing in here. Chunk sizes are
+the provider's: a short reply can arrive in three or four, not one per word.
 
 ## Rendering a turn
 

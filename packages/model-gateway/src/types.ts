@@ -18,9 +18,9 @@ export interface GenerateOptions {
 /**
  * What chat-api calls instead of a model client.
  *
- * `generate` is an async generator so that real token streaming is a change
- * inside the gateway rather than to the transport or the UI. Today every
- * provider yields the whole reply as a single chunk.
+ * `generate` is an async generator, which is what let real token streaming land
+ * inside the gateway without touching the transport or the UI. Both providers
+ * now yield many chunks; a consumer must not assume one.
  */
 export interface Gateway {
   generate(

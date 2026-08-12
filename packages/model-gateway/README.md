@@ -8,9 +8,10 @@ const gateway = createGateway();
 for await (const delta of gateway.generate(messages, { signal })) { … }
 ```
 
-`generate` is an **async generator** even though the provider call is currently
-non-streaming and yields one chunk. That is the seam: real token streaming is a
-change in here, not to the SSE transport or the UI.
+`generate` is an **async generator**, which is what let token streaming land in
+here without touching the SSE transport or the UI. It yields provider text
+deltas as they arrive; how many there are is the provider's business, so a
+consumer must append rather than assume.
 
 ## Configuration
 
@@ -30,7 +31,17 @@ change in here, not to the SSE transport or the UI.
 
 - **A refusal is a successful response, not an exception.** HTTP 200,
   `stop_reason: "refusal"`, empty content. It has to be checked *before* reading
-  the content, and it is not retryable — it is a decision, not a fault.
+  the content, and it is not retryable — it is a decision, not a fault. Streamed,
+  `stop_reason` only arrives in the final `message_delta`, so the check runs
+  after the stream ends. That is still sound: a refusal carries no text, so
+  nothing has been yielded by the time it throws.
+- **Only `text_delta` is prose.** `thinking_delta` and `input_json_delta` arrive
+  on the same `content_block_delta` event and would otherwise be concatenated
+  straight into the reply.
+- **The fallback cannot fire once a chunk is out the door.** The reader is
+  already looking at it, and a second model would restart the reply mid-sentence
+  rather than continue it. Streaming trades some of the fallback's reach for
+  time-to-first-token; a failure after the first delta is final.
 - **Retries are the SDK's, not ours.** It already backs off and honours
   `retry-after` on a 429. A second layer on top would only multiply the wait.
   What the gateway adds is the *fallback model*, which the SDK has no concept of.
@@ -55,16 +66,21 @@ change in here, not to the SSE transport or the UI.
   both JSON bodies. `x-api-key` and `authorization` are redacted going in —
   there is a test asserting the key appears nowhere in the log, because this is
   the one feature that could leak it. The response is `clone()`d before reading,
-  since a body is consumed once and the SDK still needs the original; that
-  buffers the whole response, which is fine only while calls are non-streaming.
-  Step 3 has to log SSE frames instead of draining a clone.
+  since a body is consumed once and the SDK still needs the original — but a
+  streaming body is *not* awaited: draining it to completion would hold every
+  token back until the last one arrived, turning a debug flag into a bug. Its
+  frames are logged in the background as they land, with a `+Nms` offset that is
+  the sharpest view of what the provider is actually doing.
 - **The wire log is where the response fields the SDK doesn't type live** —
   `stop_details`, `cache_creation`, `service_tier`, and the
   `anthropic-ratelimit-*` headers. Useful now, and it is where the numbers for
   step 5's cost columns will come from.
 - **The mock is a provider, not a test double.** It keeps the suite hermetic and
   `npm run dev` runnable without a key, and it logs in the same shape as a real
-  turn so switching providers does not change what the dev log looks like.
+  turn so switching providers does not change what the dev log looks like. It
+  streams word by word (`MOCK_DELAY_*` is the pause before the first chunk,
+  `MOCK_CHUNK_DELAY_MS` the gap after that), so the transport is exercised
+  keyless rather than only against a real model.
 
 ## Deliberately not here yet
 

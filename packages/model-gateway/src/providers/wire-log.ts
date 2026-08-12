@@ -45,14 +45,40 @@ function parseBody(body: unknown): unknown {
   }
 }
 
+/** Reads a clone of a streaming body, logging each frame as it lands. */
+async function logStream(
+  body: ReadableStream<Uint8Array>,
+  startedAt: number,
+  log: Logger,
+): Promise<void> {
+  const decoder = new TextDecoder();
+
+  try {
+    for await (const bytes of body as unknown as AsyncIterable<Uint8Array>) {
+      const text = decoder.decode(bytes, { stream: true });
+      if (text) {
+        log({
+          direction: "wire-chunk",
+          text,
+          sinceStartMs: Date.now() - startedAt,
+        });
+      }
+    }
+  } catch {
+    // The SDK abandoning the stream (an abort, a disconnect) tears down this
+    // side of the clone too. Nothing to report — the turn already logged why.
+  }
+}
+
 /**
  * Wraps `fetch` so the exact HTTP exchange with the provider can be logged:
  * method, URL, headers, and both JSON bodies verbatim.
  *
  * The response is cloned before reading, because a body can only be consumed
- * once and the SDK still needs the original. That buffers the whole response,
- * which is fine while calls are non-streaming — when real token streaming
- * lands, this has to log the SSE frames instead rather than draining a clone.
+ * once and the SDK still needs the original. A streaming response is *not*
+ * awaited — draining a clone to completion would hold every token back until
+ * the last one arrived, turning the debug flag into a bug. Its frames are
+ * logged in the background as they arrive instead.
  */
 export function wireLoggingFetch(log: Logger): typeof globalThis.fetch {
   return async (input, init) => {
@@ -75,11 +101,18 @@ export function wireLoggingFetch(log: Logger): typeof globalThis.fetch {
     const response = await globalThis.fetch(input, init);
     const latencyMs = Date.now() - startedAt;
 
-    let body: unknown;
-    try {
-      body = parseBody(await response.clone().text());
-    } catch {
-      body = "«could not read body»";
+    const streaming =
+      response.headers.get("content-type")?.includes("text/event-stream") ??
+      false;
+    const cloned = streaming ? response.clone() : null;
+
+    let body: unknown = null;
+    if (!streaming) {
+      try {
+        body = parseBody(await response.clone().text());
+      } catch {
+        body = "«could not read body»";
+      }
     }
 
     log({
@@ -89,6 +122,11 @@ export function wireLoggingFetch(log: Logger): typeof globalThis.fetch {
       body,
       latencyMs,
     });
+
+    // Deliberately not awaited: the SDK gets the response now, and the frames
+    // are logged as they arrive. Both halves of the clone have to be read or
+    // the unread one buffers, so this always runs to completion.
+    if (cloned?.body) void logStream(cloned.body, startedAt, log);
 
     return response;
   };

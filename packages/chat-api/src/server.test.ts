@@ -39,6 +39,14 @@ async function readSse(response: Response): Promise<SseEvent[]> {
     });
 }
 
+/** The reply as the client assembles it — deltas arrive in unknown pieces. */
+function replyText(events: SseEvent[]): string {
+  return events
+    .filter((event) => event.event === "delta")
+    .map((event) => String(event.data.text))
+    .join("");
+}
+
 describe("chat-api", () => {
   let db: Db;
   let repository: Repository;
@@ -102,10 +110,25 @@ describe("chat-api", () => {
 
     const events = await readSse(response);
 
-    expect(events.map((e) => e.event)).toEqual(["start", "delta", "done"]);
+    expect(events[0]?.event).toBe("start");
     expect(events[0]?.data.sessionId).toEqual(expect.any(String));
-    expect(events[1]?.data.text).toBe("RESPONSE");
-    expect(events[2]?.data.latencyMs).toEqual(expect.any(Number));
+    expect(events.slice(1, -1).map((e) => e.event)).toContain("delta");
+    expect(replyText(events)).toBe("RESPONSE");
+    expect(events.at(-1)?.event).toBe("done");
+    expect(events.at(-1)?.data.latencyMs).toEqual(expect.any(Number));
+  });
+
+  it("forwards each chunk as its own delta event", async () => {
+    // The provider streams; so does the transport. One delta per chunk is what
+    // makes text appear progressively rather than all at once at the end.
+    const events = await readSse(await postChat({ content: "one" }));
+    const sessionId = events[0]?.data.sessionId as string;
+
+    const second = await readSse(await postChat({ content: "two", sessionId }));
+
+    expect(
+      second.filter((event) => event.event === "delta").length,
+    ).toBeGreaterThan(1);
   });
 
   it("records the turn in the database", async () => {
@@ -134,13 +157,13 @@ describe("chat-api", () => {
     const first = await readSse(await postChat({ content: "one" }));
     const sessionId = first[0]?.data.sessionId as string;
 
-    expect(first[1]?.data.text).toBe("RESPONSE");
+    expect(replyText(first)).toBe("RESPONSE");
 
     const second = await readSse(await postChat({ content: "two", sessionId }));
 
     // The mock echoes what it was given, so this is the model demonstrably
     // seeing turn 1 while answering turn 2.
-    expect(second[1]?.data.text).toBe(
+    expect(replyText(second)).toBe(
       'RESPONSE (3 messages in context, previous: "one")',
     );
   });
