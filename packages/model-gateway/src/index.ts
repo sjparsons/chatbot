@@ -32,6 +32,7 @@ export function createGateway({
 export { loadConfig } from "./config.js";
 export { GatewayError } from "./errors.js";
 export { consoleLogger, silentLogger } from "./logging.js";
+export { estimateCostUsd } from "./pricing.js";
 export { createAnthropicProvider } from "./providers/anthropic.js";
 export { createMockProvider } from "./providers/mock.js";
 
@@ -39,9 +40,12 @@ export type { GatewayConfig, ProviderName } from "./config.js";
 export type { GatewayErrorCode } from "./errors.js";
 export type { Logger, ModelLogEvent } from "./logging.js";
 export type { ModelClient, ModelStreamEvent } from "./providers/anthropic.js";
+export type { ModelPricing } from "./pricing.js";
 export type {
   Gateway,
   GenerateOptions,
   Message,
   SystemPrompt,
+  TokenUsage,
+  TurnMetadata,
 } from "./types.js";

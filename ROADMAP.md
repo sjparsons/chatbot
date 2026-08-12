@@ -16,8 +16,8 @@ Three packages, wired together and committed:
 A real model, streaming. The assembled message array goes to Claude Haiku behind
 a versioned system prompt and the reply streams back token by token; set
 `ANTHROPIC_API_KEY` and it runs, or `MODEL_PROVIDER=mock` for the keyless
-version. There are still no token or cost columns — so the gateway's payload log
-is still the only record of what a turn cost.
+version. Every turn records the model, prompt version, tokens and cost it ran
+under, so what a turn cost is a SQL query rather than a log line.
 
 Sessions survive a refresh: the id is in the URL and the sidebar lists previous
 conversations (step 20, done early).
@@ -80,24 +80,24 @@ version earning its keep. The gateway takes `system` as a per-call argument
 rather than config, so later steps can send different prompts to different
 models. Tool definitions join the directory, and the hash, in phase 3.
 
-**5. Extend the turn log.** Add model id, prompt version, input/output tokens,
-cost, and finish reason to `responses`. This is what makes a regression
-attributable to a change.
-*Done when:* a turn's full cost and provenance are reconstructable from SQL.
+**5. Extend the turn log.** ✅ Done. `responses` carries `model`,
+`prompt_version`, `provider_request_id`, `stop_reason`, four token counts and
+`cost_usd`, so a turn's cost and provenance are a `SELECT`. The dated model id
+comes from the response, not the alias sent. Cost is priced in the gateway
+(`pricing.ts`) and stored alongside the tokens rather than derived on read — a
+price change must not rewrite what past turns cost, and the tokens make the
+estimate recomputable. Every column is nullable and null is not zero: a turn
+that failed before the model answered has no tokens, while `prompt_version` is
+known up front and is recorded even then.
 
-- The provider response already carries all of it. Run with `MODEL_LOG_WIRE=1`
-  to see the exact shape before designing the columns.
-- **Log the dated model id from the response** (`claude-haiku-4-5-20251001`),
-  not the alias we sent (`claude-haiku-4-5`). The alias moves; provenance that
-  moves with it is worthless.
-- Keep the `request-id` response header. It is what provider support asks for,
-  and nothing else identifies the call.
-- `usage` has four token fields, not two — `cache_creation_input_tokens` and
-  `cache_read_input_tokens` price differently, so cost needs all four. They are
-  0 until step 13, but the columns should exist before then.
-- SDK 0.68.0 does not type `stop_details`, `cache_creation`, or `service_tier`
-  even though the API returns them. Widen the response type in the gateway
-  rather than reading them back out of the log.
+- The gateway hands metadata back through an `onMetadata` callback rather than
+  the generator's return value, because a refusal throws and an abort breaks
+  out of the loop — the turns most worth accounting for never reach a return.
+- SDK 0.68.0 *does* type `cache_creation` and `service_tier` (they are on
+  `Usage`); the earlier note here was wrong. Only `stop_details` is untyped,
+  and nothing needs it — `stop_reason` is the finish reason.
+- Columns were added to an existing table, and `CREATE TABLE IF NOT EXISTS` does
+  not reach them. No migration: delete `data/chat.sqlite`.
 
 **6. Minimal eval harness.** ✅ Done. `@chatbot/evals`, run with `npm run eval`
 against a chat-api that is already up. Six golden cases, two of them multi-turn,

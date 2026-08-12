@@ -198,15 +198,45 @@ are additive, but swap in a migration tool before the first destructive one.
 - **`sessions`** — one row per conversation
 - **`requests`** — one row per inbound message
 - **`responses`** — one row per reply, 1:1 with a request, carrying `status`
-  (`ok`/`error`), `error`, `latency_ms`
+  (`ok`/`error`), `error`, `latency_ms`, and the provenance below
 
 This is the transcript of record — what was asked and what was answered,
 independent of whatever a model eventually sees in its context window. A
 response row is written even when the stream fails or the client disconnects
 mid-flight, so dropped turns are visible rather than missing.
 
-Model id, prompt version, token counts, and cost belong here too — those are
-what make a regression attributable. Step 5.
+### What a turn cost, and what produced it
+
+`responses` also carries `model`, `prompt_version`, `provider_request_id`,
+`stop_reason`, four token counts, and `cost_usd` — enough to attribute a
+regression to a change rather than to a hunch:
+
+```sql
+SELECT model, prompt_version, input_tokens, output_tokens, cost_usd
+  FROM responses WHERE session_id = ?;
+```
+
+Four things about those columns are deliberate:
+
+- **`model` is the dated id from the response** (`claude-haiku-4-5-20251001`),
+  not the alias that was sent (`claude-haiku-4-5`). The alias moves when the
+  provider retargets it; provenance that moves with it says nothing.
+- **Four token counts, not two.** Cache writes cost 1.25x a fresh input token
+  and cache reads a tenth of one, so a two-column version misprices any turn
+  that hits a cache. They are 0 until there is a cache breakpoint (step 13).
+- **`cost_usd` is an estimate, stored anyway.** It is computed at write time
+  from the tokens and the gateway's price table. Storing it means a later price
+  change does not silently rewrite what past turns cost; keeping the tokens
+  beside it means the estimate is recomputable if it was ever wrong. The tokens
+  are what the provider billed on and are the source of truth.
+- **All of it is nullable, and null is not zero.** A turn that failed before
+  the model answered has no model, no tokens, no cost. `prompt_version` is the
+  exception: it is known before the call, so it is recorded even for turns the
+  provider never answered.
+
+Since the columns were added to an existing table, `CREATE TABLE IF NOT EXISTS`
+does not reach them: delete `data/chat.sqlite` and let it be recreated. It is a
+dev log, not data.
 
 **Not a cache yet.** Logging every turn makes caching possible later, but
 nothing reads these tables on the request path. Adding that means picking a key,

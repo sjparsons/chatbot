@@ -6,11 +6,14 @@ import type { ModelLogEvent } from "./logging.js";
 import {
   createAnthropicProvider,
   type ModelClient,
+  type ModelStream,
   type ModelStreamEvent,
 } from "./providers/anthropic.js";
 import { wireLoggingFetch } from "./providers/wire-log.js";
+import { createMockProvider } from "./providers/mock.js";
 import { createGateway } from "./index.js";
-import type { Message } from "./types.js";
+import { estimateCostUsd } from "./pricing.js";
+import type { Message, TurnMetadata } from "./types.js";
 
 const messages: Message[] = [
   { role: "user", content: "do you sell blue shirts?" },
@@ -50,7 +53,11 @@ type Responder = (model: string) => Iterable<ModelStreamEvent>;
  * responder runs *inside* the generator so a thrown error surfaces while
  * iterating, which is where the SDK surfaces its own.
  */
-function fakeClient(respond: Responder): { client: ModelClient; calls: Call[] } {
+function fakeClient(
+  respond: Responder,
+  /** Stands in for the response header the SDK hangs off the stream. */
+  requestId?: string,
+): { client: ModelClient; calls: Call[] } {
   const calls: Call[] = [];
 
   return {
@@ -65,9 +72,12 @@ function fakeClient(respond: Responder): { client: ModelClient; calls: Call[] } 
             system: params.system,
           });
 
-          return (async function* () {
+          const stream = (async function* () {
             yield* respond(params.model);
-          })();
+          })() as ModelStream;
+
+          if (requestId !== undefined) stream.request_id = requestId;
+          return stream;
         },
       },
     },
@@ -523,5 +533,198 @@ describe("createGateway", () => {
     // Every chunk has to be appendable as-is: the client concatenates them and
     // nothing re-inserts the whitespace between words.
     expect(chunks.join("")).toContain("messages in context");
+  });
+});
+
+describe("turn metadata", () => {
+  /** Collects what the gateway reports about each provider call. */
+  function capture(): {
+    metadata: TurnMetadata[];
+    onMetadata: (m: TurnMetadata) => void;
+  } {
+    const metadata: TurnMetadata[] = [];
+    return { metadata, onMetadata: (m) => metadata.push(m) };
+  }
+
+  it("reports the dated model named in message_start, not the alias sent", async () => {
+    const { client } = fakeClient(() => [
+      {
+        type: "message_start",
+        message: { model: "primary-model-20260101", usage: { input_tokens: 10 } },
+      },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "Yes." } },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } },
+    ]);
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    // The alias moves between releases; this is the whole point of the column.
+    expect(metadata[0]?.model).toBe("primary-model-20260101");
+  });
+
+  it("falls back to the requested id when the stream omits the model", async () => {
+    const { client } = fakeClient(() => textStream(["Yes."]));
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    expect(metadata[0]?.model).toBe("primary-model");
+  });
+
+  it("reports the request id, which no stream event carries", async () => {
+    const { client } = fakeClient(() => textStream(["Yes."]), "req_123");
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    expect(metadata[0]?.providerRequestId).toBe("req_123");
+  });
+
+  it("assembles all four token counts across the two events that carry them", async () => {
+    const { client } = fakeClient(() => [
+      {
+        type: "message_start",
+        message: {
+          usage: {
+            input_tokens: 100,
+            cache_creation_input_tokens: 40,
+            cache_read_input_tokens: 300,
+          },
+        },
+      },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "Yes." } },
+      {
+        type: "message_delta",
+        delta: { stop_reason: "max_tokens" },
+        usage: { output_tokens: 20 },
+      },
+    ]);
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    // Input and cache counts arrive in message_start, output in message_delta.
+    expect(metadata[0]?.stopReason).toBe("max_tokens");
+    expect(metadata[0]?.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationInputTokens: 40,
+      cacheReadInputTokens: 300,
+    });
+  });
+
+  it("treats absent cache counts as zero, not missing", async () => {
+    const { client } = fakeClient(() => textStream(["Yes."]));
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    expect(metadata[0]?.usage?.cacheCreationInputTokens).toBe(0);
+    expect(metadata[0]?.usage?.cacheReadInputTokens).toBe(0);
+  });
+
+  it("reports a refused turn — it was still billed", async () => {
+    const { client } = fakeClient(() => textStream([], { stopReason: "refusal" }));
+    const gateway = createAnthropicProvider(testConfig({ fallbackModel: null }), {
+      client,
+    });
+    const { metadata, onMetadata } = capture();
+
+    await captureError(gateway.generate(messages, { onMetadata }));
+
+    // The turn throws, so nothing is returned — but the tokens were spent and
+    // the log has to be able to account for them.
+    expect(metadata).toHaveLength(1);
+    expect(metadata[0]?.stopReason).toBe("refusal");
+    expect(metadata[0]?.usage?.inputTokens).toBe(10);
+  });
+
+  it("reports the fallback's own call when the primary never answered", async () => {
+    const { client } = fakeClient(function* (model) {
+      if (model === "primary-model") {
+        throw new APIError(529, undefined, "overloaded", undefined);
+      }
+      yield* [
+        {
+          type: "message_start",
+          message: { model: "fallback-model-20260101", usage: { input_tokens: 10 } },
+        },
+        {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "From the fallback." },
+        },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: { output_tokens: 5 },
+        },
+      ];
+    });
+    const gateway = createAnthropicProvider(testConfig(), { client });
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    // The primary failed before any response, so only the answering call
+    // reports — and a caller keeping the last one keeps the right one.
+    expect(metadata).toHaveLength(1);
+    expect(metadata.at(-1)?.model).toBe("fallback-model-20260101");
+  });
+
+  it("is emitted by the mock provider too, with nothing invented", async () => {
+    const gateway = createMockProvider(testConfig({ provider: "mock" }));
+    const { metadata, onMetadata } = capture();
+
+    await drain(gateway.generate(messages, { onMetadata }));
+
+    expect(metadata[0]?.model).toBe("mock");
+    // No real tokens, so no made-up ones and no cost.
+    expect(metadata[0]?.usage).toBeNull();
+    expect(metadata[0]?.costUsd).toBeNull();
+  });
+});
+
+describe("cost estimation", () => {
+  const usage = {
+    inputTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  };
+
+  it("prices a turn from the list prices", async () => {
+    // Haiku 4.5 is $1/MTok in, $5/MTok out.
+    expect(estimateCostUsd("claude-haiku-4-5", usage)).toBeCloseTo(6, 10);
+  });
+
+  it("prices a dated model id at its alias's price", async () => {
+    expect(estimateCostUsd("claude-haiku-4-5-20251001", usage)).toBeCloseTo(6, 10);
+  });
+
+  it("prices cache writes and reads differently from fresh input", async () => {
+    const cost = estimateCostUsd("claude-haiku-4-5", {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 1_000_000,
+      cacheReadInputTokens: 1_000_000,
+    });
+
+    // Writes are 1.25x input, reads a tenth of it. Collapsing the four counts
+    // into two would price this turn at $2 instead of $1.35.
+    expect(cost).toBeCloseTo(1.35, 10);
+  });
+
+  it("returns null for an unpriced model rather than guessing", async () => {
+    expect(estimateCostUsd("some-other-model", usage)).toBeNull();
+  });
+
+  it("returns null when the provider reported no usage", async () => {
+    expect(estimateCostUsd("claude-haiku-4-5", null)).toBeNull();
   });
 });

@@ -262,6 +262,101 @@ describe("chat-api", () => {
     expect(turns[0]?.response?.error).toBe("provider error (529)");
   });
 
+  it("records the turn's provenance and cost from the provider response", async () => {
+    // A stand-in for a real provider call: this is the shape the turn log's
+    // new columns are fed from.
+    provider = {
+      async *generate(_messages, options) {
+        options?.onMetadata?.({
+          model: "claude-haiku-4-5-20251001",
+          stopReason: "end_turn",
+          providerRequestId: "req_abc123",
+          usage: {
+            inputTokens: 120,
+            outputTokens: 34,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+          costUsd: 0.00029,
+        });
+        yield "Yes, in medium.";
+      },
+    };
+
+    const events = await readSse(await postChat({ content: "blue shirts?" }));
+    const sessionId = events[0]?.data.sessionId as string;
+    const response = repository.listTurns(sessionId)[0]?.response;
+
+    // The whole of step 5: cost and provenance reconstructable from the row.
+    expect(response).toMatchObject({
+      status: "ok",
+      model: "claude-haiku-4-5-20251001",
+      prompt_version: "testversion",
+      provider_request_id: "req_abc123",
+      stop_reason: "end_turn",
+      input_tokens: 120,
+      output_tokens: 34,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      cost_usd: 0.00029,
+    });
+  });
+
+  it("keeps the provenance of a turn that failed after the model answered", async () => {
+    // A refusal is billed. The reply is empty and the turn is an error, but
+    // the tokens were spent and have to land in the log.
+    provider = {
+      // eslint-disable-next-line require-yield
+      async *generate(_messages, options) {
+        options?.onMetadata?.({
+          model: "claude-haiku-4-5-20251001",
+          stopReason: "refusal",
+          providerRequestId: "req_refused",
+          usage: {
+            inputTokens: 90,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+          costUsd: 0.00009,
+        });
+        throw new GatewayError("refusal", "the model declined to answer");
+      },
+    };
+
+    const events = await readSse(await postChat({ content: "hello" }));
+    const sessionId = events[0]?.data.sessionId as string;
+    const response = repository.listTurns(sessionId)[0]?.response;
+
+    expect(response).toMatchObject({
+      status: "error",
+      stop_reason: "refusal",
+      provider_request_id: "req_refused",
+      input_tokens: 90,
+      cost_usd: 0.00009,
+    });
+  });
+
+  it("logs the prompt version even when the model never answered", async () => {
+    provider = {
+      async *generate() {
+        throw new GatewayError("timeout", "provider request timed out");
+      },
+    };
+
+    const events = await readSse(await postChat({ content: "hello" }));
+    const sessionId = events[0]?.data.sessionId as string;
+    const response = repository.listTurns(sessionId)[0]?.response;
+
+    // Known before the call, so it survives a call that never happened.
+    expect(response?.prompt_version).toBe("testversion");
+    // Nothing came back, so these are null rather than zero — "no response"
+    // and "a response that used no tokens" are different facts.
+    expect(response?.model).toBeNull();
+    expect(response?.input_tokens).toBeNull();
+    expect(response?.cost_usd).toBeNull();
+  });
+
   it("reports a refusal as a declined answer", async () => {
     provider = {
       async *generate() {

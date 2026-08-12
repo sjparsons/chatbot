@@ -3,6 +3,7 @@ import {
   GatewayError,
   type Gateway,
   type SystemPrompt,
+  type TurnMetadata,
 } from "@chatbot/model-gateway";
 import { config } from "../config.js";
 import { buildContext } from "../context.js";
@@ -95,10 +96,18 @@ export function chatRouter(
 
     let text = "";
 
+    // Captured rather than returned, so a turn that ends in an abort or a
+    // refusal still records what the provider charged for it. On a fallback
+    // the gateway calls this twice; the last call is the one that answered.
+    let metadata: TurnMetadata | null = null;
+
     try {
       for await (const delta of gateway.generate(messages, {
         signal: controller.signal,
         system: systemPrompt,
+        onMetadata: (received) => {
+          metadata = received;
+        },
       })) {
         if (aborted) break;
         text += delta;
@@ -113,6 +122,8 @@ export function chatRouter(
           status: "error",
           error: "client disconnected",
           latencyMs: Date.now() - startedAt,
+          metadata,
+          promptVersion: systemPrompt.version,
         });
         return;
       }
@@ -123,6 +134,8 @@ export function chatRouter(
         content: text,
         status: "ok",
         latencyMs: Date.now() - startedAt,
+        metadata,
+        promptVersion: systemPrompt.version,
       });
 
       stream.send("done", {
@@ -140,6 +153,8 @@ export function chatRouter(
           status: "error",
           error: "client disconnected",
           latencyMs: Date.now() - startedAt,
+          metadata,
+          promptVersion: systemPrompt.version,
         });
         return;
       }
@@ -154,6 +169,8 @@ export function chatRouter(
         status: "error",
         error: detail,
         latencyMs: Date.now() - startedAt,
+        metadata,
+        promptVersion: systemPrompt.version,
       });
 
       stream.send("error", { message: clientMessage(error) });

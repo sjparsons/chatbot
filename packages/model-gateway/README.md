@@ -51,6 +51,16 @@ consumer must append rather than assume.
 - **`GatewayError.code`, not the message, is the contract.** chat-api maps codes
   to what the browser is told; provider messages carry request ids and internal
   detail and stay in the turn log.
+- **Turn metadata is a callback (`onMetadata`), not the generator's return
+  value.** `for await` discards a generator's return, and the turns worth
+  accounting for are exactly the ones that never reach it — a refusal throws, an
+  abort breaks out of the loop, and both were billed. The callback has already
+  fired by then. On a fallback it fires once per *answering* call; the last one
+  is the one that produced the reply.
+- **Cost is priced here, from `pricing.ts`.** The gateway is what knows which
+  model ran, so it is what can price it. An unlisted model yields a null cost
+  rather than a guess. Dated ids are priced by their alias prefix, so a model
+  release does not need a new table entry.
 - **The timeout is set explicitly because the SDK's default is 10 minutes**,
   which would hold an SSE stream open far longer than anyone waits.
 - **Haiku does not accept `effort`** — it 400s. Nor does the gateway send
@@ -72,9 +82,9 @@ consumer must append rather than assume.
   frames are logged in the background as they land, with a `+Nms` offset that is
   the sharpest view of what the provider is actually doing.
 - **The wire log is where the response fields the SDK doesn't type live** —
-  `stop_details`, `cache_creation`, `service_tier`, and the
-  `anthropic-ratelimit-*` headers. Useful now, and it is where the numbers for
-  step 5's cost columns will come from.
+  `stop_details`, `service_tier`, and the `anthropic-ratelimit-*` headers. The
+  cost columns no longer need it: token counts and the dated model id come off
+  the stream events, and the request id off the stream object.
 - **The system prompt is a per-call argument, not gateway config.** The gateway
   does not know what the assistant is; chat-api owns the prompt artifact and
   hands it over per turn. Later steps send different prompts to different models
@@ -98,9 +108,8 @@ consumer must append rather than assume.
 
 ## Deliberately not here yet
 
-No token/cost accounting (step 5 puts it in the turn log) and no tool loop
-(phase 3). The payload log is the stand-in for both: while nothing else records
-what the model saw, stdout is it.
+No tool loop (phase 3). The payload log is the stand-in: while nothing else
+records what the model saw in full, stdout is it.
 
 The system prompt passes *through* here but does not live here — it is
 chat-api's artifact, at

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { TurnMetadata } from "@chatbot/model-gateway";
 import type { Db } from "./index.js";
 
 export interface SessionRow {
@@ -23,6 +24,21 @@ export interface ResponseRow {
   error: string | null;
   latency_ms: number;
   created_at: string;
+
+  /**
+   * Everything below is null when the turn failed before the provider
+   * answered — a timeout, an auth error, a client that hung up early. Null
+   * means "no provider response", which is not the same as zero.
+   */
+  model: string | null;
+  prompt_version: string | null;
+  provider_request_id: string | null;
+  stop_reason: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  cost_usd: number | null;
 }
 
 export interface TurnRow {
@@ -132,7 +148,14 @@ export class Repository {
     status: "ok" | "error";
     error?: string | null;
     latencyMs: number;
+    /** What the model reported. Absent when it never answered. */
+    metadata?: TurnMetadata | null;
+    /** Version of the system prompt the turn was sent under. */
+    promptVersion?: string | null;
   }): ResponseRow {
+    const metadata = input.metadata ?? null;
+    const usage = metadata?.usage ?? null;
+
     const row: ResponseRow = {
       id: randomUUID(),
       request_id: input.requestId,
@@ -142,14 +165,33 @@ export class Repository {
       error: input.error ?? null,
       latency_ms: input.latencyMs,
       created_at: now(),
+
+      model: metadata?.model ?? null,
+      // Recorded even on a failed turn: the prompt is known before the call is
+      // made, so "which prompt was this sent under" is answerable for turns
+      // the provider never answered.
+      prompt_version: input.promptVersion ?? null,
+      provider_request_id: metadata?.providerRequestId ?? null,
+      stop_reason: metadata?.stopReason ?? null,
+      input_tokens: usage?.inputTokens ?? null,
+      output_tokens: usage?.outputTokens ?? null,
+      cache_creation_input_tokens: usage?.cacheCreationInputTokens ?? null,
+      cache_read_input_tokens: usage?.cacheReadInputTokens ?? null,
+      cost_usd: metadata?.costUsd ?? null,
     };
 
     this.db
       .prepare(
         `INSERT INTO responses
-           (id, request_id, session_id, content, status, error, latency_ms, created_at)
+           (id, request_id, session_id, content, status, error, latency_ms,
+            created_at, model, prompt_version, provider_request_id, stop_reason,
+            input_tokens, output_tokens, cache_creation_input_tokens,
+            cache_read_input_tokens, cost_usd)
          VALUES
-           (@id, @request_id, @session_id, @content, @status, @error, @latency_ms, @created_at)`,
+           (@id, @request_id, @session_id, @content, @status, @error, @latency_ms,
+            @created_at, @model, @prompt_version, @provider_request_id, @stop_reason,
+            @input_tokens, @output_tokens, @cache_creation_input_tokens,
+            @cache_read_input_tokens, @cost_usd)`,
       )
       .run(row);
 

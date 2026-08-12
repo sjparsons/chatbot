@@ -54,6 +54,12 @@ explain the why, especially any non-obvious fix.
   maintains. Anything else that becomes part of the prompt — tool definitions
   above all — has to go into that hash, or the version starts labelling turns
   with instructions they did not run under.
+- **Turn metadata leaves the gateway by callback, not by return value.**
+  `for await` discards a generator's return, and the turns most worth costing
+  are the ones that never reach it — a refusal throws, an abort breaks the loop,
+  and both were billed.
+- **`responses.model` is the dated id from the response**, never the alias that
+  was sent. An alias points at whatever is current, including after the fact.
 - **All SQL lives in `db/repository.ts`** — the Postgres move is meant to be one
   file.
 - **`createApp()` takes its repository and its gateway as arguments** so tests

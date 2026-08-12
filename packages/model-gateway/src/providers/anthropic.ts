@@ -2,12 +2,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { GatewayConfig } from "../config.js";
 import { GatewayError, mapProviderError } from "../errors.js";
 import type { Logger } from "../logging.js";
-import type { Gateway, GenerateOptions, Message } from "../types.js";
+import { estimateCostUsd } from "../pricing.js";
+import type {
+  Gateway,
+  GenerateOptions,
+  Message,
+  TokenUsage,
+} from "../types.js";
 import { wireLoggingFetch } from "./wire-log.js";
 
-interface TokenUsage {
+/**
+ * Usage as it arrives on the wire. Every field is optional because it is split
+ * across two events: `message_start` carries the input and cache counts,
+ * `message_delta` the output count.
+ */
+interface StreamUsage {
   input_tokens?: number | null;
   output_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
 }
 
 /**
@@ -15,16 +28,34 @@ interface TokenUsage {
  * SDK's `RawMessageStreamEvent` union satisfies it structurally, and a test
  * double can be a plain object rather than a mocked module.
  *
- * The four fields that matter, and where they arrive:
- * `message_start` carries input tokens, `content_block_delta` the text,
- * `message_delta` the stop reason and output tokens.
+ * What matters, and where it arrives: `message_start` carries the model id and
+ * the input and cache token counts, `content_block_delta` the text,
+ * `message_delta` the stop reason and the output token count.
  */
 export interface ModelStreamEvent {
   type: string;
   delta?: { type?: string; text?: string; stop_reason?: string | null };
-  message?: { usage?: TokenUsage };
-  usage?: TokenUsage;
+  message?: {
+    /**
+     * Dated (`claude-haiku-4-5-20251001`) even though the request sent an
+     * alias. This is the id worth logging.
+     */
+    model?: string;
+    usage?: StreamUsage;
+  };
+  usage?: StreamUsage;
 }
+
+/**
+ * A stream, plus the one thing about the call that is not in the events.
+ *
+ * `request_id` comes from a response header, so no SSE frame carries it — the
+ * SDK hangs it off the stream object instead. Optional, so a test double stays
+ * a plain async iterable.
+ */
+export type ModelStream = AsyncIterable<ModelStreamEvent> & {
+  request_id?: string | null;
+};
 
 export interface ModelClient {
   messages: {
@@ -37,7 +68,7 @@ export interface ModelClient {
         system?: string;
       },
       options?: { signal?: AbortSignal },
-    ): AsyncIterable<ModelStreamEvent>;
+    ): ModelStream;
   };
 }
 
@@ -86,7 +117,7 @@ export function createAnthropicProvider(
   async function* streamModel(
     modelId: string,
     messages: Message[],
-    { signal, system }: GenerateOptions,
+    { signal, system, onMetadata }: GenerateOptions,
   ): AsyncGenerator<string> {
     log({
       direction: "request",
@@ -103,6 +134,11 @@ export function createAnthropicProvider(
     let stopReason: string | null = null;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
+    let cacheCreationTokens: number | null = null;
+    let cacheReadTokens: number | null = null;
+    // The alias we asked for, until `message_start` names the dated id.
+    let resolvedModel = modelId;
+    let requestId: string | null = null;
 
     try {
       const stream = model.messages.stream(
@@ -119,7 +155,15 @@ export function createAnthropicProvider(
 
       for await (const event of stream) {
         if (event.type === "message_start") {
+          // Everything about the call that is fixed before generation starts:
+          // which model actually ran, and what the prompt cost to read.
+          resolvedModel = event.message?.model ?? resolvedModel;
           inputTokens = event.message?.usage?.input_tokens ?? inputTokens;
+          cacheCreationTokens =
+            event.message?.usage?.cache_creation_input_tokens ??
+            cacheCreationTokens;
+          cacheReadTokens =
+            event.message?.usage?.cache_read_input_tokens ?? cacheReadTokens;
           continue;
         }
 
@@ -127,6 +171,10 @@ export function createAnthropicProvider(
           stopReason = event.delta?.stop_reason ?? stopReason;
           inputTokens = event.usage?.input_tokens ?? inputTokens;
           outputTokens = event.usage?.output_tokens ?? outputTokens;
+          cacheCreationTokens =
+            event.usage?.cache_creation_input_tokens ?? cacheCreationTokens;
+          cacheReadTokens =
+            event.usage?.cache_read_input_tokens ?? cacheReadTokens;
           continue;
         }
 
@@ -142,6 +190,11 @@ export function createAnthropicProvider(
         text += chunk;
         yield chunk;
       }
+
+      // Not in any SSE frame — it is a response header, which the SDK hangs
+      // off the stream. Read once the stream is done, by which point the
+      // headers are long since in.
+      requestId = stream.request_id ?? null;
     } catch (error) {
       const mapped = mapProviderError(error, modelId);
       log({
@@ -165,6 +218,29 @@ export function createAnthropicProvider(
           : { inputTokens: inputTokens ?? 0, outputTokens: outputTokens ?? 0 },
       firstTokenMs,
       latencyMs: Date.now() - startedAt,
+    });
+
+    // Emitted here — after the stream has ended, before the refusal and
+    // empty-text checks below throw. A refused turn is a billed turn, and the
+    // point of the columns downstream is that it can still be accounted for.
+    const usage: TokenUsage | null =
+      inputTokens === null && outputTokens === null
+        ? null
+        : {
+            inputTokens: inputTokens ?? 0,
+            outputTokens: outputTokens ?? 0,
+            // Absent on a stream that never touched a cache, which is zero
+            // tokens rather than unknown.
+            cacheCreationInputTokens: cacheCreationTokens ?? 0,
+            cacheReadInputTokens: cacheReadTokens ?? 0,
+          };
+
+    onMetadata?.({
+      model: resolvedModel,
+      stopReason,
+      providerRequestId: requestId,
+      usage,
+      costUsd: estimateCostUsd(resolvedModel, usage),
     });
 
     // A refusal is a *successful* response carrying no text, not a thrown

@@ -87,6 +87,17 @@ export function createMockProvider(
         firstTokenMs,
         latencyMs: Date.now() - startedAt,
       });
+
+      // Emitted so the metadata path is exercised by every test that runs
+      // against the mock. There are no real tokens to report and nothing to
+      // price, which is what null means here — distinct from zero.
+      options.onMetadata?.({
+        model: "mock",
+        stopReason: "end_turn",
+        providerRequestId: null,
+        usage: null,
+        costUsd: null,
+      });
     },
   };
 }

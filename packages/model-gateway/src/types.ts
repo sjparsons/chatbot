@@ -19,6 +19,39 @@ export interface SystemPrompt {
   text: string;
 }
 
+/**
+ * The four token counts the provider bills on. They price differently —
+ * a cache read is a tenth of a fresh input token — so cost needs all four,
+ * not just input and output.
+ *
+ * The cache fields are 0 until there is a cache breakpoint to hit.
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+/** What a turn cost and what produced it. */
+export interface TurnMetadata {
+  /**
+   * The dated id from the response (`claude-haiku-4-5-20251001`), not the
+   * alias that was sent. The alias moves; provenance that moves with it is
+   * worthless.
+   */
+  model: string;
+  stopReason: string | null;
+  /**
+   * The provider's `request-id` header. It is what provider support asks for,
+   * and nothing else identifies the call.
+   */
+  providerRequestId: string | null;
+  usage: TokenUsage | null;
+  /** Estimated from `usage` and a local price table. Null if unpriced. */
+  costUsd: number | null;
+}
+
 export interface GenerateOptions {
   /**
    * Cancels the in-flight provider call. chat-api wires this to the client
@@ -32,6 +65,17 @@ export interface GenerateOptions {
    * models through the same gateway.
    */
   system?: SystemPrompt;
+
+  /**
+   * Called once per completed provider call, before `generate` yields anything.
+   *
+   * A callback rather than the generator's return value because the turn log
+   * exists for the turns that go wrong: a caller that breaks out of the loop on
+   * an abort, or catches a refusal, never sees a return value, but has already
+   * been handed the metadata here. Fallback calls it twice — last one wins,
+   * and that is the call that produced the reply.
+   */
+  onMetadata?: (metadata: TurnMetadata) => void;
 }
 
 /**
