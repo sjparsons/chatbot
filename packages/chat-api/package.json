@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc --build && cp src/db/schema.sql dist/db/schema.sql",
+    "build": "tsc --build && cp src/db/schema.sql dist/db/schema.sql && cp src/prompt/system.md dist/prompt/system.md",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -71,7 +71,10 @@ SQLite, and turns go to Claude Haiku through the model gateway with the session
 transcript as context. Sessions persist across a refresh — the id is in the URL
 and a sidebar lists previous conversations to jump back into.
 
-The reply still arrives as a single chunk rather than streaming token by token,
-and there is no system prompt yet — so the model does not know it is a retail
-assistant. Product search, policy retrieval, and guardrails are not built. See
+It answers as a retail assistant: the system prompt is a file in git, versioned
+by its own hash and logged per turn. With no catalogue or policy text behind it
+yet, the prompt's main job is to make it say so rather than invent an answer.
+
+The reply still arrives as a single chunk rather than streaming token by token.
+Product search, policy retrieval, and guardrails are not built. See
 [ROADMAP.md](ROADMAP.md).

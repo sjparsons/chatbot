@@ -49,6 +49,7 @@ export function createMockProvider(
         model: "mock",
         maxTokens: config.maxTokens,
         messages,
+        system: options.system ?? null,
       });
 
       const startedAt = Date.now();

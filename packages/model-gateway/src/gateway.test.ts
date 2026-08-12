@@ -39,6 +39,7 @@ interface Call {
   model: string;
   maxTokens: number;
   messages: Message[];
+  system: string | undefined;
 }
 
 type Responder = (model: string) => ModelResponse | Promise<ModelResponse>;
@@ -55,6 +56,7 @@ function fakeClient(respond: Responder): { client: ModelClient; calls: Call[] } 
             model: params.model,
             maxTokens: params.max_tokens,
             messages: params.messages,
+            system: params.system,
           });
           return respond(params.model);
         },
@@ -107,6 +109,54 @@ describe("anthropic provider", () => {
     // The context array is passed through untranslated — that is the whole
     // reason context.ts builds it in the provider's shape.
     expect(calls[0]?.messages).toEqual(messages);
+  });
+
+  it("sends the system prompt as a top-level parameter", async () => {
+    const { client, calls } = fakeClient(() => textResponse("Yes, in medium."));
+    const gateway = createAnthropicProvider(testConfig(), { client });
+
+    await drain(
+      gateway.generate(messages, {
+        system: { version: "abc123", text: "you are a shop assistant" },
+      }),
+    );
+
+    expect(calls[0]?.system).toBe("you are a shop assistant");
+    // It is not smuggled in as a message — this API has no "system" role.
+    expect(calls[0]?.messages).toEqual(messages);
+  });
+
+  it("omits the system parameter rather than sending an empty one", async () => {
+    const { client, calls } = fakeClient(() => textResponse("Yes."));
+    const gateway = createAnthropicProvider(testConfig(), { client });
+
+    await drain(gateway.generate(messages));
+
+    expect(calls[0]).not.toHaveProperty("system", "");
+    expect(calls[0]?.system).toBeUndefined();
+  });
+
+  it("sends the same prompt to the fallback model", async () => {
+    const { client, calls } = fakeClient((model) => {
+      if (model === "primary-model") {
+        throw APIError.generate(529, undefined, "Overloaded", new Headers());
+      }
+      return textResponse("Yes.");
+    });
+    const gateway = createAnthropicProvider(testConfig(), { client });
+
+    await drain(
+      gateway.generate(messages, {
+        system: { version: "abc123", text: "you are a shop assistant" },
+      }),
+    );
+
+    // A fallback that answers under different instructions is a silent
+    // behaviour change, and the log would attribute it to the same version.
+    expect(calls.map((call) => call.system)).toEqual([
+      "you are a shop assistant",
+      "you are a shop assistant",
+    ]);
   });
 
   it("concatenates multiple text blocks and ignores non-text ones", async () => {
@@ -235,12 +285,15 @@ describe("anthropic provider", () => {
       logger: (event) => events.push(event),
     });
 
-    await drain(gateway.generate(messages));
+    const system = { version: "abc123", text: "you are a shop assistant" };
+    await drain(gateway.generate(messages, { system }));
 
     const request = events.find((event) => event.direction === "request");
     const response = events.find((event) => event.direction === "response");
 
-    expect(request).toMatchObject({ model: "primary-model", messages });
+    // The prompt version is logged with the turn: what identifies which
+    // instructions produced this reply, without reprinting them every turn.
+    expect(request).toMatchObject({ model: "primary-model", messages, system });
     expect(response).toMatchObject({
       model: "primary-model",
       text: "Yes, in medium.",

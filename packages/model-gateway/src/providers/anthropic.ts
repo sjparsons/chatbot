@@ -19,7 +19,13 @@ export interface ModelResponse {
 export interface ModelClient {
   messages: {
     create(
-      params: { model: string; max_tokens: number; messages: Message[] },
+      params: {
+        model: string;
+        max_tokens: number;
+        messages: Message[];
+        /** Top-level on this API, not a message with `role: "system"`. */
+        system?: string;
+      },
       options?: { signal?: AbortSignal },
     ): Promise<ModelResponse>;
   };
@@ -62,13 +68,14 @@ export function createAnthropicProvider(
   async function complete(
     modelId: string,
     messages: Message[],
-    signal: AbortSignal | undefined,
+    { signal, system }: GenerateOptions,
   ): Promise<string> {
     log({
       direction: "request",
       model: modelId,
       maxTokens: config.maxTokens,
       messages,
+      system: system ?? null,
     });
 
     const startedAt = Date.now();
@@ -76,7 +83,14 @@ export function createAnthropicProvider(
     let response: ModelResponse;
     try {
       response = await model.messages.create(
-        { model: modelId, max_tokens: config.maxTokens, messages },
+        {
+          model: modelId,
+          max_tokens: config.maxTokens,
+          messages,
+          // Omitted rather than sent empty when there is no prompt: the API
+          // treats "" as a system prompt, and an empty one is not nothing.
+          ...(system ? { system: system.text } : {}),
+        },
         { signal },
       );
     } catch (error) {
@@ -138,7 +152,7 @@ export function createAnthropicProvider(
       let text: string;
 
       try {
-        text = await complete(config.model, messages, options.signal);
+        text = await complete(config.model, messages, options);
       } catch (error) {
         const failure = mapProviderError(error, config.model);
         const fallback = config.fallbackModel;
@@ -151,7 +165,7 @@ export function createAnthropicProvider(
         // model, so this is the last thing standing between a provider blip
         // and a failed turn.
         try {
-          text = await complete(fallback, messages, options.signal);
+          text = await complete(fallback, messages, options);
         } catch (fallbackError) {
           const mapped = mapProviderError(fallbackError, fallback);
           throw new GatewayError(

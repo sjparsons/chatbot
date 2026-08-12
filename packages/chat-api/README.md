@@ -129,6 +129,34 @@ expect.
 Unlike the tables' role as a turn log, this is a read path — but a UI query, not
 one on the request path, so the "not a cache" note below still holds.
 
+## The system prompt
+
+`src/prompt/system.md` is the assistant's instructions — a file in git, loaded
+at boot and passed to the gateway with every turn.
+
+Its **version is the first 12 hex characters of the SHA-256 of the text sent**,
+not a number anyone maintains. Edit the prompt and the id moves on its own,
+which is the point: a hand-bumped version that someone forgets to bump labels
+every turn after it with a lie. What a hash gives up is ordering — two ids tell
+you the prompt changed, not which came first. Git knows that.
+
+The text is trimmed before hashing, so the id covers exactly the bytes the
+provider receives rather than the file's trailing newline.
+
+It appears twice in the log: once at boot, and once per turn on the gateway's
+request line (`system 07d6cad1e22f (1619 chars)`). If those disagree, the file
+changed while the process was up. The prompt text itself is *not* printed per
+turn — that is what the version replaces. Step 5 puts the same string in the
+`responses` row, which is what makes "which prompt produced this reply"
+answerable in SQL rather than by scrolling stdout.
+
+`createApp()` takes the prompt as an argument, like the repository and the
+gateway, so the request path never reads the filesystem and tests supply their
+own.
+
+Tool definitions belong in this directory too, and in the hash, when there are
+any — phase 3.
+
 ## Context assembly
 
 `context.ts` turns a session transcript into the model's message array. The
@@ -166,8 +194,8 @@ independent of whatever a model eventually sees in its context window. A
 response row is written even when the stream fails or the client disconnects
 mid-flight, so dropped turns are visible rather than missing.
 
-When there's a real model call, model id, prompt version, token counts, and cost
-belong here too — those are what make a regression attributable.
+Model id, prompt version, token counts, and cost belong here too — those are
+what make a regression attributable. Step 5.
 
 **Not a cache yet.** Logging every turn makes caching possible later, but
 nothing reads these tables on the request path. Adding that means picking a key,
@@ -183,6 +211,9 @@ src/
   server.ts       Express app assembly (createApp, for tests)
   config.ts       Environment configuration
   context.ts      Transcript -> the model's message array
+  prompt/
+    system.md     The system prompt, versioned by its own hash
+    index.ts      Loads it and stamps the version
   sse.ts          Server-Sent Events writer
   routes/
     chat.ts       POST /chat

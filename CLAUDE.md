@@ -43,6 +43,10 @@ explain the why, especially any non-obvious fix.
   streaming needs no transport or UI change. Keep it that way.
 - **A model refusal is a successful response, not an exception** — HTTP 200,
   `stop_reason: "refusal"`, empty content. Check it before reading the content.
+- **The prompt version is a hash of the prompt text**, not a number anyone
+  maintains. Anything else that becomes part of the prompt — tool definitions
+  above all — has to go into that hash, or the version starts labelling turns
+  with instructions they did not run under.
 - **All SQL lives in `db/repository.ts`** — the Postgres move is meant to be one
   file.
 - **`createApp()` takes its repository and its gateway as arguments** so tests

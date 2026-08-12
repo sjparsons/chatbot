@@ -5,6 +5,8 @@ import {
   createGateway,
   GatewayError,
   type Gateway,
+  type GenerateOptions,
+  type SystemPrompt,
 } from "@chatbot/model-gateway";
 import { openDatabase, type Db } from "./db/index.js";
 import { Repository } from "./db/repository.js";
@@ -50,14 +52,30 @@ describe("chat-api", () => {
   // failing model swap `provider` rather than the reference the app holds.
   const mockProvider = () => createGateway({ config: { provider: "mock" } });
   let provider: Gateway = mockProvider();
+  let lastOptions: GenerateOptions | undefined;
   const gateway: Gateway = {
-    generate: (messages, options) => provider.generate(messages, options),
+    generate: (messages, options) => {
+      lastOptions = options;
+      return provider.generate(messages, options);
+    },
+  };
+
+  // Not the real artifact: the assertions below would then turn on the prompt's
+  // contents, and every edit to it would fail a transport test.
+  const systemPrompt: SystemPrompt = {
+    version: "testversion",
+    text: "you are a test fixture",
   };
 
   beforeEach(async () => {
     db = openDatabase(":memory:");
     repository = new Repository(db);
-    const app = createApp({ repository, corsOrigins: ["*"], gateway });
+    const app = createApp({
+      repository,
+      corsOrigins: ["*"],
+      gateway,
+      systemPrompt,
+    });
 
     server = await new Promise<Server>((resolve) => {
       const s = app.listen(0, () => resolve(s));
@@ -71,6 +89,7 @@ describe("chat-api", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     db.close();
     provider = mockProvider();
+    lastOptions = undefined;
   });
 
   function postChat(body: unknown): Promise<Response> {
@@ -106,6 +125,12 @@ describe("chat-api", () => {
     expect(events[0]?.data.sessionId).toEqual(expect.any(String));
     expect(events[1]?.data.text).toBe("RESPONSE");
     expect(events[2]?.data.latencyMs).toEqual(expect.any(Number));
+  });
+
+  it("sends the system prompt it was constructed with", async () => {
+    await readSse(await postChat({ content: "hello" }));
+
+    expect(lastOptions?.system).toEqual(systemPrompt);
   });
 
   it("records the turn in the database", async () => {

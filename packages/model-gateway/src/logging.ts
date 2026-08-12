@@ -1,10 +1,12 @@
-import type { Message } from "./types.js";
+import type { Message, SystemPrompt } from "./types.js";
 
 export interface ModelRequestLog {
   direction: "request";
   model: string;
   maxTokens: number;
   messages: Message[];
+  /** The prompt artifact this turn was sent with; null if none was. */
+  system: SystemPrompt | null;
 }
 
 export interface ModelResponseLog {
@@ -66,8 +68,15 @@ const indent = (text: string): string =>
 export const consoleLogger: Logger = (event) => {
   if (event.direction === "request") {
     const count = event.messages.length;
+    // The system prompt is printed as its version, not its text: it is the same
+    // every turn, it is long, and the version is exactly the handle for looking
+    // it up in git. The transcript below still prints in full — that part is
+    // different every turn and nowhere else to be seen.
+    const system = event.system
+      ? `system ${event.system.version} (${event.system.text.length} chars)`
+      : "no system prompt";
     console.log(
-      `\n→ ${event.model}  (${count} message${count === 1 ? "" : "s"}, max_tokens ${event.maxTokens})`,
+      `\n→ ${event.model}  (${count} message${count === 1 ? "" : "s"}, max_tokens ${event.maxTokens}, ${system})`,
     );
     for (const message of event.messages) {
       console.log(`  [${message.role}] ${message.content}`);

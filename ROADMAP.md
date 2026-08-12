@@ -13,18 +13,19 @@ Three packages, wired together and committed:
 - **model-gateway** — provider client, model config, timeouts, fallback model,
   error mapping
 
-A real model. The assembled message array goes to Claude Haiku; set
-`ANTHROPIC_API_KEY` and it runs, or `MODEL_PROVIDER=mock` for the old keyless
-behaviour. Replies still arrive as one chunk, with no system prompt and no
-token or cost columns — so the gateway's payload log is currently the only
-record of what the model was given.
+A real model. The assembled message array goes to Claude Haiku behind a
+versioned system prompt; set `ANTHROPIC_API_KEY` and it runs, or
+`MODEL_PROVIDER=mock` for the old keyless behaviour. Replies still arrive as one
+chunk, and there are no token or cost columns — so the gateway's payload log is
+still the only record of what a turn cost.
 
 Sessions survive a refresh: the id is in the URL and the sidebar lists previous
 conversations (step 20, done early).
 
 **Seams already in place:** the gateway returns an async generator (many chunks
 needs no transport change); all SQL is confined to `db/repository.ts`;
-`createApp()` takes its repository *and* its gateway as arguments.
+`createApp()` takes its repository, its gateway *and* its system prompt as
+arguments.
 
 ## Decisions already made
 
@@ -56,9 +57,15 @@ existing SSE `delta` events. The transport already handles many chunks; the
 mock only ever emits one, so this is untested in practice.
 *Done when:* text appears progressively in the UI.
 
-**4. Prompt as a versioned artifact.** System prompt and tool definitions live
-in files, in git, with a version id.
-*Done when:* changing the prompt changes a version string that gets logged.
+**4. Prompt as a versioned artifact.** ✅ Done. `chat-api/src/prompt/system.md`
+is the assistant's instructions, in git, loaded at boot and passed to the
+gateway per turn. The version is the first 12 hex characters of the SHA-256 of
+the text sent — derived, not hand-maintained, because a version someone forgets
+to bump labels every turn after it with a lie. It prints at boot and on every
+gateway request line; the prompt *text* no longer prints per turn, which is the
+version earning its keep. The gateway takes `system` as a per-call argument
+rather than config, so later steps can send different prompts to different
+models. Tool definitions join the directory, and the hash, in phase 3.
 
 **5. Extend the turn log.** Add model id, prompt version, input/output tokens,
 cost, and finish reason to `responses`. This is what makes a regression
