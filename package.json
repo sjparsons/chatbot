@@ -1,0 +1,20 @@
+{
+  "name": "chatbot",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n chat-ui -c blue \"npm run dev -w @chatbot/chat-ui\"",
+    "build": "npm run build --workspaces --if-present",
+    "start": "concurrently -n chat-ui -c blue \"npm run start -w @chatbot/chat-ui\"",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}
