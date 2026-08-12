@@ -60,7 +60,8 @@ list services explicitly, which is what gives each its own label and colour.
 ## Status
 
 UI and chat-api are wired together: replies stream over SSE, every turn lands in
-SQLite.
+SQLite. Sessions persist across a refresh — the id is in the URL and a sidebar
+lists previous conversations to jump back into.
 
 No model yet — chat-api returns `RESPONSE` to everything after a random
 0.5–3s delay, so the streaming and pending states are exercised against

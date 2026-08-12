@@ -30,6 +30,13 @@ export interface TurnRow {
   response: ResponseRow | null;
 }
 
+/** A session plus just enough to render a row in the history list. */
+export interface SessionSummaryRow extends SessionRow {
+  /** First thing the user said, or null for a session with no turns yet. */
+  preview: string | null;
+  turn_count: number;
+}
+
 const now = () => new Date().toISOString();
 
 /**
@@ -62,6 +69,30 @@ export class Repository {
       .get(id) as SessionRow | undefined;
 
     return row ?? null;
+  }
+
+  /**
+   * Sessions for the history list, most recently active first.
+   *
+   * Preview and count are correlated subqueries rather than a join with
+   * GROUP BY so that a session with no turns yet still comes back, with a null
+   * preview, instead of being dropped.
+   */
+  listSessions(limit = 100): SessionSummaryRow[] {
+    return this.db
+      .prepare(
+        `SELECT
+           s.*,
+           (SELECT content FROM requests
+             WHERE session_id = s.id
+             ORDER BY created_at, id
+             LIMIT 1) AS preview,
+           (SELECT COUNT(*) FROM requests WHERE session_id = s.id) AS turn_count
+         FROM sessions s
+         ORDER BY s.updated_at DESC, s.created_at DESC
+         LIMIT ?`,
+      )
+      .all(Math.max(0, limit)) as SessionSummaryRow[];
   }
 
   /** Returns the existing session, or creates one if the id is absent/unknown. */

@@ -33,8 +33,16 @@ body {
 
 .app {
   display: flex;
-  flex-direction: column;
   height: 100dvh;
+}
+
+/* The chat column keeps the old centred 720px measure; the sidebar sits
+   outside it so the conversation doesn't shift when it collapses. */
+.app__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   max-width: 720px;
   margin: 0 auto;
 }
@@ -61,6 +69,105 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.sidebar {
+  width: 16rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.sidebar--collapsed {
+  width: 3.5rem;
+}
+
+.sidebar__actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.sidebar--collapsed .sidebar__actions {
+  flex-direction: column;
+}
+
+.sidebar__icon {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebar__icon:hover {
+  background: var(--assistant-bg);
+}
+
+.sidebar__heading {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sidebar__note {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.sidebar__note--error {
+  color: #b91c1c;
+}
+
+.sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.session {
+  display: block;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.session:hover {
+  background: var(--assistant-bg);
+}
+
+.session--active {
+  background: var(--user-bg);
+}
+
+.session__title {
+  display: block;
+  font-size: 0.85rem;
+  /* One line — the preview is a whole first message and can be long. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session__meta {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--muted);
 }
 
 .messages {

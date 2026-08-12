@@ -4,6 +4,25 @@ import type { Repository } from "../db/repository.js";
 export function sessionsRouter(repository: Repository): Router {
   const router = Router();
 
+  /** Session history, newest first — what the UI's sidebar lists. */
+  router.get("/sessions", (req, res) => {
+    const requested = Number(req.query.limit);
+    const limit =
+      Number.isFinite(requested) && requested > 0
+        ? Math.min(requested, 200)
+        : 100;
+
+    const sessions = repository.listSessions(limit).map((session) => ({
+      id: session.id,
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
+      preview: session.preview,
+      turnCount: session.turn_count,
+    }));
+
+    res.json({ sessions });
+  });
+
   router.post("/sessions", (_req, res) => {
     const session = repository.createSession();
     res.status(201).json({ id: session.id, createdAt: session.created_at });
