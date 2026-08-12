@@ -1,6 +1,5 @@
 import { parseSseStream } from "./sse";
-
-const API_URL = import.meta.env.VITE_CHAT_API_URL ?? "http://localhost:3001";
+import { API_URL } from "./config";
 
 export interface ChatStreamHandlers {
   /** Fires once, before any text — carries the session the turn belongs to. */

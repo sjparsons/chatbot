@@ -66,6 +66,7 @@ a deployment change, not a code one.
 | ------ | -------------------------- | ---------------------------------------- |
 | `GET`  | `/health`                  | Liveness check                            |
 | `POST` | `/chat`                    | Send a message, stream the reply over SSE |
+| `GET`  | `/sessions`                | Session history, newest first             |
 | `POST` | `/sessions`                | Create an empty session                   |
 | `GET`  | `/sessions/:id`            | Session metadata                          |
 | `GET`  | `/sessions/:id/messages`   | Flattened transcript, oldest first        |
@@ -105,6 +106,28 @@ function returning a string.
 Clients use `fetch` and read the `ReadableStream`, not `EventSource` — the
 latter can only issue GETs and can't send a body. The model APIs behave the same
 way, so the shape carries over.
+
+### `GET /sessions`
+
+Backs the UI's sidebar. `?limit=` defaults to 100, caps at 200.
+
+```jsonc
+{ "sessions": [
+  { "id": "7771215b-…", "createdAt": "…", "updatedAt": "…",
+    "preview": "do you sell blue shirts?", "turnCount": 3 }
+] }
+```
+
+`preview` is the *first* user message, so a row's label doesn't change as the
+conversation goes on; it's `null` for a session with no turns yet, which is why
+the query uses subqueries rather than a join that would drop those rows.
+
+Ordered by `updated_at`, which only moves when a response is written. A session
+whose reply failed keeps its old timestamp and sorts lower than you might
+expect.
+
+Unlike the tables' role as a turn log, this is a read path — but a UI query, not
+one on the request path, so the "not a cache" note below still holds.
 
 ## Context assembly
 

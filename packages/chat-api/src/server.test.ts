@@ -235,6 +235,49 @@ describe("chat-api", () => {
     ]);
   });
 
+  it("lists sessions newest first, with a preview and turn count", async () => {
+    const first = await readSse(await postChat({ content: "older" }));
+    const olderId = first[0]?.data.sessionId as string;
+    await readSse(await postChat({ content: "second turn", sessionId: olderId }));
+
+    const second = await readSse(await postChat({ content: "newer" }));
+    const newerId = second[0]?.data.sessionId as string;
+
+    const response = await fetch(`${baseUrl}/sessions`);
+    const body = (await response.json()) as {
+      sessions: { id: string; preview: string | null; turnCount: number }[];
+    };
+
+    expect(body.sessions.map((s) => s.id)).toEqual([newerId, olderId]);
+    // Preview is the first thing said, not the most recent.
+    expect(body.sessions[1]).toMatchObject({ preview: "older", turnCount: 2 });
+    expect(body.sessions[0]).toMatchObject({ preview: "newer", turnCount: 1 });
+  });
+
+  it("lists a session that has no turns yet", async () => {
+    const created = await fetch(`${baseUrl}/sessions`, { method: "POST" });
+    const { id } = (await created.json()) as { id: string };
+
+    const response = await fetch(`${baseUrl}/sessions`);
+    const body = (await response.json()) as {
+      sessions: { id: string; preview: string | null; turnCount: number }[];
+    };
+
+    expect(body.sessions).toEqual([
+      expect.objectContaining({ id, preview: null, turnCount: 0 }),
+    ]);
+  });
+
+  it("caps the number of sessions returned", async () => {
+    await readSse(await postChat({ content: "one" }));
+    await readSse(await postChat({ content: "two" }));
+
+    const response = await fetch(`${baseUrl}/sessions?limit=1`);
+    const body = (await response.json()) as { sessions: unknown[] };
+
+    expect(body.sessions).toHaveLength(1);
+  });
+
   it("404s an unknown session", async () => {
     const response = await fetch(`${baseUrl}/sessions/nope/messages`);
     expect(response.status).toBe(404);

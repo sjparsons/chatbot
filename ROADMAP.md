@@ -19,6 +19,9 @@ behaviour. Replies still arrive as one chunk, with no system prompt and no
 token or cost columns — so the gateway's payload log is currently the only
 record of what the model was given.
 
+Sessions survive a refresh: the id is in the URL and the sidebar lists previous
+conversations (step 20, done early).
+
 **Seams already in place:** the gateway returns an async generator (many chunks
 needs no transport change); all SQL is confined to `db/repository.ts`;
 `createApp()` takes its repository *and* its gateway as arguments.
@@ -145,9 +148,11 @@ leave undrawn.
 context, tokens, cost, per-step latency. Plus a sampled full-I/O store that
 someone actually reads.
 
-**20. Session persistence in the browser.** Refresh currently starts a new
-conversation. The transcript is already on the server;
-`GET /sessions/:id/messages` will rehydrate it.
+**20. Session persistence in the browser.** ✅ Done, pulled forward out of
+order. The session id lives in the URL (`/c/:sessionId`), so a refresh or a
+pasted link rehydrates from `GET /sessions/:id/messages`. Widened beyond the
+original entry: a new `GET /sessions` and a collapsible sidebar list previous
+sessions and let you jump between them.
 
 ---
 

@@ -68,7 +68,8 @@ list services explicitly, which is what gives each its own label and colour.
 
 UI and chat-api are wired together: replies stream over SSE, every turn lands in
 SQLite, and turns go to Claude Haiku through the model gateway with the session
-transcript as context.
+transcript as context. Sessions persist across a refresh — the id is in the URL
+and a sidebar lists previous conversations to jump back into.
 
 The reply still arrives as a single chunk rather than streaming token by token,
 and there is no system prompt yet — so the model does not know it is a retail
