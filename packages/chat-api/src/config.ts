@@ -23,8 +23,4 @@ export const config = {
    * answered included. Last N verbatim; summarizing older ones comes later.
    */
   contextWindowTurns: int(process.env.CONTEXT_WINDOW_TURNS, 10),
-
-  /** Bounds for the mock response delay, in milliseconds. */
-  mockDelayMinMs: int(process.env.MOCK_DELAY_MIN_MS, 500),
-  mockDelayMaxMs: int(process.env.MOCK_DELAY_MAX_MS, 3000),
 };

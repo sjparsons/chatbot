@@ -1,8 +1,8 @@
 import { Router } from "express";
+import { GatewayError, type Gateway } from "@chatbot/model-gateway";
 import { config } from "../config.js";
 import { buildContext } from "../context.js";
 import type { Repository } from "../db/repository.js";
-import { generateResponse } from "../mock.js";
 import { SseStream } from "../sse.js";
 
 interface ChatBody {
@@ -10,7 +10,32 @@ interface ChatBody {
   sessionId?: unknown;
 }
 
-export function chatRouter(repository: Repository): Router {
+/**
+ * What the browser is told when a turn fails.
+ *
+ * Provider errors can carry request ids and internal detail, so the client gets
+ * the category and the turn log keeps the original message.
+ */
+function clientMessage(error: unknown): string {
+  if (!(error instanceof GatewayError)) return "something went wrong";
+
+  switch (error.code) {
+    case "refusal":
+      return "the assistant declined to answer that";
+    case "timeout":
+      return "the assistant took too long to respond";
+    case "rate_limit":
+    case "overloaded":
+      return "the assistant is busy — try again in a moment";
+    case "auth":
+    case "invalid_request":
+      return "the assistant is misconfigured";
+    default:
+      return "the assistant is unavailable";
+  }
+}
+
+export function chatRouter(repository: Repository, gateway: Gateway): Router {
   const router = Router();
 
   router.post("/chat", async (req, res) => {
@@ -45,10 +70,14 @@ export function chatRouter(repository: Repository): Router {
     // would flag every stream as aborted. `res` emits "close" when the socket
     // goes away, which is only an abort if we hadn't finished writing.
     let aborted = false;
+    const controller = new AbortController();
     res.on("close", () => {
       if (res.writableEnded) return;
       aborted = true;
       stream.markClosed();
+      // Cancel the provider call too — otherwise an abandoned turn keeps
+      // generating, and paying, with nobody listening.
+      controller.abort();
     });
 
     stream.send("start", {
@@ -59,7 +88,9 @@ export function chatRouter(repository: Repository): Router {
     let text = "";
 
     try {
-      for await (const delta of generateResponse(messages)) {
+      for await (const delta of gateway.generate(messages, {
+        signal: controller.signal,
+      })) {
         if (aborted) break;
         text += delta;
         stream.send("delta", { text: delta });
@@ -90,18 +121,33 @@ export function chatRouter(repository: Repository): Router {
         latencyMs: response.latency_ms,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      // Aborting the provider call surfaces here as a thrown error rather than
+      // the loop ending, so a disconnect is not logged as a provider fault.
+      if (aborted) {
+        repository.createResponse({
+          requestId: request.id,
+          sessionId: session.id,
+          content: text,
+          status: "error",
+          error: "client disconnected",
+          latencyMs: Date.now() - startedAt,
+        });
+        return;
+      }
+
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`chat turn failed (request ${request.id}):`, error);
 
       repository.createResponse({
         requestId: request.id,
         sessionId: session.id,
         content: text,
         status: "error",
-        error: message,
+        error: detail,
         latencyMs: Date.now() - startedAt,
       });
 
-      stream.send("error", { message });
+      stream.send("error", { message: clientMessage(error) });
     } finally {
       stream.close();
     }

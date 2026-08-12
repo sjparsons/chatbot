@@ -3,6 +3,9 @@ dist/
 build/
 coverage/
 *.log
+
+# Incremental state from `tsc --build` (project references)
+*.tsbuildinfo
 .env
 .env.local
 .DS_Store

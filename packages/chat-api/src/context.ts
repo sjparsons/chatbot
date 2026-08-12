@@ -1,13 +1,9 @@
+import type { Message } from "@chatbot/model-gateway";
 import type { TurnRow } from "./db/repository.js";
 
-/**
- * A message as the model sees it. Deliberately the shape the provider APIs
- * take, so the gateway can pass this array through without translating.
- */
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+// The gateway owns this type: it is the shape the provider APIs take, and
+// assembling it here is what lets the gateway pass the array straight through.
+export type { Message };
 
 /**
  * Flattens a session transcript into the model's message array.

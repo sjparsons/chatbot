@@ -39,12 +39,18 @@ explain the why, especially any non-obvious fix.
   `express.json()` drains the request stream before the handler runs, so `req`
   emits `close` immediately and flags every stream as aborted — `res.end()` then
   never fires and the client hangs. Guard with `res.writableEnded`.
-- **`mock.ts` is an async generator** so that real token streaming needs no
-  transport or UI change. Keep it that way when swapping in a model.
+- **The gateway's `generate()` is an async generator** so that real token
+  streaming needs no transport or UI change. Keep it that way.
+- **A model refusal is a successful response, not an exception** — HTTP 200,
+  `stop_reason: "refusal"`, empty content. Check it before reading the content.
 - **All SQL lives in `db/repository.ts`** — the Postgres move is meant to be one
   file.
-- **`createApp()` takes its repository as an argument** so tests use an
-  in-memory DB on an ephemeral port.
+- **`createApp()` takes its repository and its gateway as arguments** so tests
+  use an in-memory DB and the mock provider on an ephemeral port.
+- **chat-api references model-gateway as a TypeScript project**, so `typecheck`
+  is `tsc --build` and emits. That is what keeps the two in dependency order
+  regardless of the workspace order npm happens to use. Tests skip it — vitest
+  aliases the package to its source.
 - **The UI streams with `fetch` + `ReadableStream`, not `EventSource`** —
   `EventSource` can't send a body.
 - **`OPTIONS` requests in the browser are CORS preflight**, not application

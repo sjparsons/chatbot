@@ -1,0 +1,28 @@
+{
+  "name": "@chatbot/model-gateway",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

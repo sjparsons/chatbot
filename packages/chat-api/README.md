@@ -3,10 +3,11 @@
 HTTP service the chat UI talks to. Streams replies over Server-Sent Events and
 records every turn in SQLite.
 
-The model is mocked, but it is given a real context: the session transcript is
-assembled into a message array on every turn, and the mock echoes what it was
-handed, so `RESPONSE (5 messages in context, previous: "…")` is proof the model
-would have seen the earlier turns.
+Turns go to a real model through `@chatbot/model-gateway`, which owns the
+provider client, timeouts, the fallback model, and error mapping. Set
+`MODEL_PROVIDER=mock` to run without a key: the mock echoes the context it was
+handed, so `RESPONSE (5 messages in context, previous: "…")` still shows the
+model would have seen the earlier turns.
 
 ```sh
 npm run dev -w @chatbot/chat-api    # http://localhost:3001
@@ -30,8 +31,9 @@ npm run dev -w @chatbot/chat-api    # http://localhost:3001
 | `CORS_ORIGINS`       | `http://localhost:5173`  | Comma-separated allowed origins |
 | `DATABASE_URL`       | `./data/chat.sqlite`     | SQLite file, or `:memory:`      |
 | `CONTEXT_WINDOW_TURNS` | `10`                   | Turns of transcript sent to the model |
-| `MOCK_DELAY_MIN_MS`  | `500`                    | Fake delay, lower bound         |
-| `MOCK_DELAY_MAX_MS`  | `3000`                   | Fake delay, upper bound         |
+
+Model, provider, timeouts and the payload log are configured separately — see
+[`@chatbot/model-gateway`](../model-gateway/README.md).
 
 ### CORS preflight
 
@@ -76,7 +78,12 @@ data: {"responseId":"5b53bb03-…","latencyMs":713}
 ```
 
 Every event's `data` is JSON so clients parse them uniformly. Failures emit
-`event: error` with `{"message": "…"}` instead of `done`.
+`event: error` with `{"message": "…"}` instead of `done`, and the stream is
+closed either way — a provider failure never leaves the client hanging.
+
+That message is a **category** ("the assistant is busy — try again in a
+moment"), not the provider's. Provider messages carry request ids and internal
+detail, so they stay in the `responses` row and the server log.
 
 There's one `delta` today; real token streaming emits many. That's the only wire
 change it requires, which is why the mock is an async generator rather than a
@@ -140,7 +147,6 @@ src/
   server.ts       Express app assembly (createApp, for tests)
   config.ts       Environment configuration
   context.ts      Transcript -> the model's message array
-  mock.ts         Stand-in for the model call
   sse.ts          Server-Sent Events writer
   routes/
     chat.ts       POST /chat

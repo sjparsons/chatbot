@@ -5,9 +5,9 @@
     "moduleResolution": "NodeNext",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "composite": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../model-gateway" }]
+  "exclude": ["src/**/*.test.ts"]
 }

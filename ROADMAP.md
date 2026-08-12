@@ -5,19 +5,23 @@ system runnable.
 
 ## Where things stand
 
-Two packages, wired together and committed:
+Three packages, wired together and committed:
 
 - **chat-ui** (:5173) — React SPA, streams replies via `fetch` + `ReadableStream`
 - **chat-api** (:3001) — Express, `POST /chat` emits SSE `start`/`delta`/`done`,
   every turn logged to SQLite (`sessions`, `requests`, `responses`)
+- **model-gateway** — provider client, model config, timeouts, fallback model,
+  error mapping
 
-No model. `mock.ts` yields one chunk after 0.5–3s — but it now takes the
-assembled message array, so a second turn demonstrably sees the first.
+A real model. The assembled message array goes to Claude Haiku; set
+`ANTHROPIC_API_KEY` and it runs, or `MODEL_PROVIDER=mock` for the old keyless
+behaviour. Replies still arrive as one chunk, with no system prompt and no
+token or cost columns — so the gateway's payload log is currently the only
+record of what the model was given.
 
-**Seams already in place:** `mock.ts` is an async generator taking a message
-array (many chunks needs no transport change, and a provider client drops into
-the same signature); all SQL is confined to `db/repository.ts`; `createApp()`
-takes its repository as an argument.
+**Seams already in place:** the gateway returns an async generator (many chunks
+needs no transport change); all SQL is confined to `db/repository.ts`;
+`createApp()` takes its repository *and* its gateway as arguments.
 
 ## Decisions already made
 
@@ -37,12 +41,12 @@ session transcript; window policy is the last `CONTEXT_WINDOW_TURNS` turns
 verbatim (default 10), windowed in SQL. Turns without a successful reply are
 dropped so roles stay alternating. Summarization stays deferred.
 
-**2. Model gateway.** New package. Owns the provider client, model config,
-retries with backoff, timeouts, fallback model, and error mapping — including
-refusals, which arrive as a successful response with an empty content array,
-not an exception.
-*Done when:* chat-api calls the gateway instead of `mock.ts`, and provider
-failures surface as a clean `error` event rather than a hung stream.
+**2. Model gateway.** ✅ Done. `@chatbot/model-gateway` owns the provider client,
+model config, timeouts, the fallback model, and error mapping — refusals
+included, checked as a successful empty response rather than caught. Retries are
+the SDK's (it honours `retry-after`); what the gateway adds on top is the
+fallback model, tried only on retryable codes. The mock survives as a provider,
+so the suite stays hermetic. Payload logging is on by default.
 
 **3. Real streaming.** Pipe provider deltas through the gateway into the
 existing SSE `delta` events. The transport already handles many chunks; the

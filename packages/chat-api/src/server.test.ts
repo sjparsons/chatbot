@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import {
+  createGateway,
+  GatewayError,
+  type Gateway,
+} from "@chatbot/model-gateway";
 import { openDatabase, type Db } from "./db/index.js";
 import { Repository } from "./db/repository.js";
 import { createApp } from "./server.js";
@@ -40,10 +45,19 @@ describe("chat-api", () => {
   let server: Server;
   let baseUrl: string;
 
+  // Mock provider: no key, no network, and the reply echoes the context it was
+  // handed. The app captures `gateway` at construction, so tests that need a
+  // failing model swap `provider` rather than the reference the app holds.
+  const mockProvider = () => createGateway({ config: { provider: "mock" } });
+  let provider: Gateway = mockProvider();
+  const gateway: Gateway = {
+    generate: (messages, options) => provider.generate(messages, options),
+  };
+
   beforeEach(async () => {
     db = openDatabase(":memory:");
     repository = new Repository(db);
-    const app = createApp({ repository, corsOrigins: ["*"] });
+    const app = createApp({ repository, corsOrigins: ["*"], gateway });
 
     server = await new Promise<Server>((resolve) => {
       const s = app.listen(0, () => resolve(s));
@@ -56,6 +70,7 @@ describe("chat-api", () => {
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     db.close();
+    provider = mockProvider();
   });
 
   function postChat(body: unknown): Promise<Response> {
@@ -165,6 +180,44 @@ describe("chat-api", () => {
     );
 
     expect(events[0]?.data.sessionId).not.toBe("does-not-exist");
+  });
+
+  it("surfaces a provider failure as an error event, not a hung stream", async () => {
+    provider = {
+      async *generate() {
+        throw new GatewayError("overloaded", "provider error (529)", {
+          model: "claude-haiku-4-5",
+        });
+      },
+    };
+
+    const events = await readSse(await postChat({ content: "hello" }));
+
+    expect(events.map((e) => e.event)).toEqual(["start", "error"]);
+    expect(events[1]?.data.message).toBe(
+      "the assistant is busy — try again in a moment",
+    );
+
+    const sessionId = events[0]?.data.sessionId as string;
+    const turns = repository.listTurns(sessionId);
+
+    // The wire gets the category; the turn log keeps what actually happened.
+    expect(turns[0]?.response?.status).toBe("error");
+    expect(turns[0]?.response?.error).toBe("provider error (529)");
+  });
+
+  it("reports a refusal as a declined answer", async () => {
+    provider = {
+      async *generate() {
+        throw new GatewayError("refusal", "the model declined to answer");
+      },
+    };
+
+    const events = await readSse(await postChat({ content: "hello" }));
+
+    expect(events[1]?.data.message).toBe(
+      "the assistant declined to answer that",
+    );
   });
 
   it("serves the transcript over HTTP", async () => {

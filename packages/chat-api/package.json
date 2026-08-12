@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && cp src/db/schema.sql dist/db/schema.sql",
+    "build": "tsc --build && cp src/db/schema.sql dist/db/schema.sql",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --build"
   },
   "dependencies": {
+    "@chatbot/model-gateway": "*",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "express": "^5.0.1"

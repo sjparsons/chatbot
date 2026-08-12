@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import type { Gateway } from "@chatbot/model-gateway";
 import type { Repository } from "./db/repository.js";
 import { chatRouter } from "./routes/chat.js";
 import { sessionsRouter } from "./routes/sessions.js";
@@ -7,9 +8,18 @@ import { sessionsRouter } from "./routes/sessions.js";
 export interface ServerOptions {
   repository: Repository;
   corsOrigins: string[];
+  /**
+   * Injected for the same reason the repository is: tests hand over a gateway
+   * backed by the mock provider, so the suite never needs a key or a network.
+   */
+  gateway: Gateway;
 }
 
-export function createApp({ repository, corsOrigins }: ServerOptions): Express {
+export function createApp({
+  repository,
+  corsOrigins,
+  gateway,
+}: ServerOptions): Express {
   const app = express();
 
   app.use(cors({ origin: corsOrigins }));
@@ -20,7 +30,7 @@ export function createApp({ repository, corsOrigins }: ServerOptions): Express {
   });
 
   app.use(sessionsRouter(repository));
-  app.use(chatRouter(repository));
+  app.use(chatRouter(repository, gateway));
 
   app.use((_req, res) => {
     res.status(404).json({ error: "not found" });
