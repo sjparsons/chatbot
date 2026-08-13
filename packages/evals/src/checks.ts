@@ -1,4 +1,5 @@
 import { createGateway, type Gateway } from "@chatbot/model-gateway";
+import { createUsageTally } from "./cost.js";
 
 /**
  * A check is a function from a reply to a verdict. That is the whole
@@ -38,15 +39,22 @@ Answer with PASS or FAIL, then a colon and one short sentence quoting the part o
  */
 let judgeGateway: Gateway | undefined;
 
+/** What the judging has cost so far. Read by the runner once the cases finish. */
+const tally = createUsageTally();
+export const judgeUsage = tally.usage;
+
 function gateway(): Gateway {
   judgeGateway ??= createGateway({
     config: {
       provider: "anthropic",
       model: process.env.EVAL_JUDGE_MODEL ?? "claude-sonnet-5",
       fallbackModel: null,
-      logPayloads: false,
       logWire: false,
     },
+    // Supersedes `logPayloads` rather than sitting alongside it: the gateway
+    // uses a supplied logger *instead of* the console one, so the judge's
+    // payloads stay off and the tokens still get counted.
+    logger: tally.logger,
   });
   return judgeGateway;
 }

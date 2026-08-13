@@ -4,7 +4,9 @@ import { appendFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cases, styleChecks } from "./cases.js";
+import { judgeUsage } from "./checks.js";
 import { fetchHealth, runTurns } from "./client.js";
+import { costUsd } from "./cost.js";
 
 const baseUrl = process.env.EVAL_BASE_URL ?? "http://localhost:3001";
 const resultsFile = resolve(
@@ -56,7 +58,18 @@ for (const testCase of cases) {
   }
 }
 
-console.log(`\n  ${passed}/${total} checks\n`);
+console.log(`\n  ${passed}/${total} checks`);
+
+// Judging only. The assistant's own inference is billed to whatever key the
+// server is running on, and it does not report tokens — so this is the cost of
+// grading, not the cost of the run, and the label has to keep saying so.
+const cost = costUsd(judgeUsage);
+console.log(
+  `  judging  ${judgeUsage.calls} calls to ${judgeUsage.model ?? "none"}` +
+    `  in=${judgeUsage.inputTokens} out=${judgeUsage.outputTokens}` +
+    (cost === null ? "  (unpriced model)" : `  ~$${cost.toFixed(4)}`) +
+    "\n",
+);
 
 // One line per run, in git. The point of the file is `git diff`: a score
 // dropping next to a prompt version that changed is the regression, and it is
@@ -69,6 +82,15 @@ appendFileSync(
     total,
     prompt: health.prompt,
     model: health.model,
+    // Tokens as well as dollars: the rate table is the part that goes stale, so
+    // recording the counts keeps every past line repriceable.
+    judge: {
+      model: judgeUsage.model,
+      calls: judgeUsage.calls,
+      inputTokens: judgeUsage.inputTokens,
+      outputTokens: judgeUsage.outputTokens,
+      costUsd: cost,
+    },
     failed: failures.map((f) => `${f.case}/${f.check}`),
   }) + "\n",
 );

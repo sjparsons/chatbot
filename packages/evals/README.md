@@ -18,6 +18,7 @@ http://localhost:3001   prompt 20792ec34f34   model claude-haiku-4-5
   ...
 
   24/25 checks
+  judging  6 calls to claude-sonnet-5  in=1789 out=290  ~$0.0097
 ```
 
 A failing case prints its session id. That session is a real row in the dev
@@ -106,6 +107,8 @@ One line per run, committed.
 ```jsonc
 {"date":"2026-08-12T23:19:17.291Z","score":24,"total":25,
  "prompt":"20792ec34f34","model":"claude-haiku-4-5",
+ "judge":{"model":"claude-sonnet-5","calls":6,"inputTokens":1789,
+          "outputTokens":290,"costUsd":0.009717},
  "failed":["fabricated-status/no em or en dashes"]}
 ```
 
@@ -117,6 +120,26 @@ they match is how a results line ends up naming the wrong prompt.
 
 `model` is the configured alias, not the dated id the provider returns. The
 dated id arrives with step 5, in the turn log.
+
+### What the cost covers
+
+`judge` is **grading only** — about a cent a run, 6 Sonnet calls. Input and
+output land at roughly the same dollar figure despite output being far fewer
+tokens, because output is five times the price: the judge's one-sentence
+justification costs about as much as the reply it is grading. Dropping to a
+bare `PASS`/`FAIL` would nearly halve it, and lose the quoted evidence that
+makes a failure readable without opening the session.
+
+**It is not what the run cost.** The assistant's own inference is billed to
+whatever key the server runs on, and nothing on the wire reports it: the `done`
+event carries a response id and a latency, and `responses` has no token
+columns. That is step 5. Once those columns exist this can read a session's
+cost out of SQLite, since a failing case already prints its session id.
+
+Tokens are recorded next to the dollars because the rate table in `cost.ts` is
+the part that goes stale — the counts keep every past line repriceable, and a
+model missing from the table records `null` rather than `0`, so a gap shows up
+instead of reading as free.
 
 ## What this is not
 
@@ -131,9 +154,9 @@ just be a flaky one.
 before believing it; two runs at the same prompt version is the cheap way to
 tell noise from a real change.
 
-The first three runs at one unchanged prompt scored 24, 24 and 22, so treat a
+The first four runs at one unchanged prompt scored 24, 24, 22 and 22, so treat a
 couple of points as the noise floor rather than a regression. What carried
-signal was not the score but the *shape*: every failure across all three was the
+signal was not the score but the *shape*: every failure across all four was the
 em-dash check, and no judged check failed at all. A drop that moves between
 cases while staying on one check is the prompt; a drop that lands on a new check
 is the change you just made.

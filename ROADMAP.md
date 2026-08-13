@@ -121,9 +121,13 @@ checks rather than cases so a failure names itself. Each run appends a line to
 - **Deliberately outside `npm test`**, and it exits 0 even with failures. The
   subject is nondeterministic; a threshold here would be a flaky gate, not a
   signal. One sample per case, so run it twice before believing a drop.
-- Three runs at prompt `20792ec34f34` scored 24, 24 and 22 out of 25, and every
-  failure in all three was the same check: an em dash in a reply that was
-  otherwise correct. Five of eighteen replies had one, against a prompt that
+- **Each run reports what the judging cost** — token counts and dollars, on
+  stdout and in the results line. Grading is about a cent a run. The assistant's
+  own inference is not included and cannot be: nothing on the wire reports it
+  until step 5 puts tokens in `responses`.
+- Four runs at prompt `20792ec34f34` scored 24, 24, 22 and 22 out of 25, and
+  every failure in all four was the same check: an em dash in a reply that was
+  otherwise correct, in roughly a quarter of replies, against a prompt that
   forbids them. No judged check has failed yet, so the finding is style, and the
   fix is in `system.md` rather than here.
 
