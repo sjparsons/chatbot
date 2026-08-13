@@ -39,6 +39,7 @@ system prompt as arguments.
 | UI calls chat-api directly | No BFF. Same-origin in prod removes CORS; deployment change, not code. |
 | SSE over POST, not `EventSource` | `EventSource` can't send a body. Matches how provider APIs stream. |
 | Turn log is observability, not cache | No read path on the request path. Caching needs a key strategy, and in multi-turn chat the latest message alone won't do. |
+| Model prices live in the gateway | One table, in the package that already owns model config. Two copies drift silently, and a cost nobody trusts is worse than no cost. |
 
 ---
 

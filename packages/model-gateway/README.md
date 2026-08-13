@@ -57,10 +57,12 @@ consumer must append rather than assume.
   abort breaks out of the loop, and both were billed. The callback has already
   fired by then. On a fallback it fires once per *answering* call; the last one
   is the one that produced the reply.
-- **Cost is priced here, from `pricing.ts`.** The gateway is what knows which
-  model ran, so it is what can price it. An unlisted model yields a null cost
-  rather than a guess. Dated ids are priced by their alias prefix, so a model
-  release does not need a new table entry.
+- **Cost is priced here, from `pricing.ts`, and only here.** The gateway is what
+  knows which model ran, so it is what can price it — `estimateCostUsd` is
+  exported, and chat-api's turn log and the eval harness both call it rather
+  than keeping tables of their own. An unlisted model yields a null cost rather
+  than a guess. Dated ids are priced by their alias prefix, so a model release
+  does not need a new table entry.
 - **The timeout is set explicitly because the SDK's default is 10 minutes**,
   which would hold an SSE stream open far longer than anyone waits.
 - **Haiku does not accept `effort`** — it 400s. Nor does the gateway send

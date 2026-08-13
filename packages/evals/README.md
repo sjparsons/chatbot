@@ -131,15 +131,17 @@ bare `PASS`/`FAIL` would nearly halve it, and lose the quoted evidence that
 makes a failure readable without opening the session.
 
 **It is not what the run cost.** The assistant's own inference is billed to
-whatever key the server runs on, and nothing on the wire reports it: the `done`
-event carries a response id and a latency, and `responses` has no token
-columns. That is step 5. Once those columns exist this can read a session's
-cost out of SQLite, since a failing case already prints its session id.
+whatever key the server runs on, and nothing on the wire reports it — the `done`
+event carries a response id and a latency, and nothing more. Step 5 puts the
+tokens and cost in `responses`, so a run's real cost is a query against the turn
+log by session id, which a failing case already prints.
 
-Tokens are recorded next to the dollars because the rate table in `cost.ts` is
-the part that goes stale — the counts keep every past line repriceable, and a
-model missing from the table records `null` rather than `0`, so a gap shows up
-instead of reading as free.
+Tokens are recorded next to the dollars because the rate table is the part that
+goes stale — the counts keep every past line repriceable, and a model missing
+from the table records `null` rather than `0`, so a gap shows up instead of
+reading as free. The table itself lives in `@chatbot/model-gateway`, not here:
+the gateway owns model config, and one set of prices cannot disagree with
+itself.
 
 ## What this is not
 

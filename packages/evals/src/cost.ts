@@ -1,4 +1,4 @@
-import type { Logger } from "@chatbot/model-gateway";
+import { estimateCostUsd, type Logger } from "@chatbot/model-gateway";
 
 /**
  * What the judging cost. Not what the run cost.
@@ -17,25 +17,31 @@ export interface JudgeUsage {
   outputTokens: number;
 }
 
-/** USD per million tokens, input and output. */
-const RATES: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-5": { input: 3, output: 15 },
-  "claude-haiku-4-5": { input: 1, output: 5 },
-};
-
 /**
- * A rate table in the repo goes stale silently, which is the failure mode the
- * derived prompt version exists to avoid elsewhere. So an unpriced model scores
- * `null` rather than 0: a missing cost is visible in the results line, a wrong
- * one is not. The token counts are the durable fact and are recorded either
- * way, so any line can be repriced later.
+ * Prices a run's judging from the gateway's table.
+ *
+ * The rates live in `@chatbot/model-gateway`, not here. Two tables of the same
+ * numbers is the staleness failure this file's own rule was written against —
+ * and the halves drift in ways that are hard to see: one would price a dated
+ * model id and the other score it `null`. The gateway owns model config, and
+ * both callers already depend on it, so it owns what a model costs.
+ *
+ * An unpriced model still scores `null` rather than 0: a missing cost is
+ * visible in the results line and a wrong one is not. The token counts are the
+ * durable fact and are recorded either way, so any line can be repriced later.
  */
 export function costUsd(usage: JudgeUsage): number | null {
-  const rate = usage.model === null ? undefined : RATES[usage.model];
-  if (rate === undefined) return null;
+  if (usage.model === null) return null;
 
-  const dollars =
-    (usage.inputTokens * rate.input + usage.outputTokens * rate.output) / 1e6;
+  const dollars = estimateCostUsd(usage.model, {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    // Judging sets no cache breakpoint, so these are zero rather than unknown.
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  });
+
+  if (dollars === null) return null;
 
   // Six places because a run costs about a cent, and rounding to four would
   // report most of them as 0.01 regardless of what changed.
