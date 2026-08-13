@@ -11,6 +11,7 @@
     "build": "npm run build --workspaces --if-present",
     "start": "concurrently -n chat-api,chat-ui -c green,blue \"npm run start -w @chatbot/chat-api\" \"npm run start -w @chatbot/chat-ui\"",
     "test": "npm run test --workspaces --if-present",
+    "eval": "npm run eval -w @chatbot/evals",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

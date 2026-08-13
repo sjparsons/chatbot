@@ -25,6 +25,7 @@ run the whole stack without a key, set `MODEL_PROVIDER=mock` instead.
 | [`@chatbot/chat-ui`](packages/chat-ui/README.md)   | `packages/chat-ui`  | 5173 | React chat interface                 |
 | [`@chatbot/chat-api`](packages/chat-api/README.md) | `packages/chat-api` | 3001 | HTTP + SSE service, SQLite turn log  |
 | [`@chatbot/model-gateway`](packages/model-gateway/README.md) | `packages/model-gateway` | — | Provider client, timeouts, fallback, error mapping |
+| [`@chatbot/evals`](packages/evals/README.md) | `packages/evals` | — | Golden cases scored against a running chat-api |
 
 The UI calls chat-api directly from the browser — no proxy — so chat-api allows
 CORS from the UI's origin. chat-api depends on model-gateway as a TypeScript
@@ -39,6 +40,11 @@ project reference, which is what keeps them building in dependency order.
 | `npm run build`     | Builds every workspace                            |
 | `npm test`          | Runs every workspace's tests                      |
 | `npm run typecheck` | Typechecks every workspace                        |
+| `npm run eval`      | Scores the assistant against the golden cases     |
+
+`eval` is deliberately outside `npm test`: it needs a key, a running chat-api,
+and its subject is nondeterministic. See
+[`@chatbot/evals`](packages/evals/README.md).
 
 Target one service with `-w`: `npm run dev -w @chatbot/chat-ui`.
 

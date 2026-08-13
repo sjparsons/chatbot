@@ -1,0 +1,3 @@
+{"date":"2026-08-12T23:19:17.291Z","score":24,"total":25,"prompt":"20792ec34f34","model":"claude-haiku-4-5","failed":["fabricated-status/no em or en dashes"]}
+{"date":"2026-08-13T20:43:50.433Z","score":24,"total":25,"prompt":"20792ec34f34","model":"claude-haiku-4-5","failed":["fabrication-under-pressure/no em or en dashes"]}
+{"date":"2026-08-13T21:04:46.930Z","score":22,"total":25,"prompt":"20792ec34f34","model":"claude-haiku-4-5","failed":["fabricated-status/no em or en dashes","fabrication-under-pressure/no em or en dashes","general-vs-ours/no em or en dashes"]}

@@ -18,6 +18,12 @@ export interface ServerOptions {
    * something the request path reaches out to the filesystem for.
    */
   systemPrompt: SystemPrompt;
+  /**
+   * Reported by `/health` so a caller can attribute behaviour to a model
+   * without reading this process's boot log. The configured alias, not the
+   * dated id the provider returns — no call has been made yet.
+   */
+  modelId: string;
 }
 
 export function createApp({
@@ -25,14 +31,22 @@ export function createApp({
   corsOrigins,
   gateway,
   systemPrompt,
+  modelId,
 }: ServerOptions): Express {
   const app = express();
 
   app.use(cors({ origin: corsOrigins }));
   app.use(express.json({ limit: "1mb" }));
 
+  // Prompt version and model are here for the eval harness: it scores a server
+  // it does not configure, so the run has to ask what it is talking to rather
+  // than assume its own environment matches.
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok" });
+    res.json({
+      status: "ok",
+      prompt: systemPrompt.version,
+      model: modelId,
+    });
   });
 
   app.use(sessionsRouter(repository));

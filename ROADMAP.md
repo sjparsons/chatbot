@@ -22,6 +22,10 @@ is still the only record of what a turn cost.
 Sessions survive a refresh: the id is in the URL and the sidebar lists previous
 conversations (step 20, done early).
 
+A baseline. `npm run eval` scores six golden cases against a running chat-api
+and appends the number to `packages/evals/results.jsonl`, stamped with the
+prompt version that produced it.
+
 **Seams already in place:** the gateway returns an async generator (streaming
 cost the transport and the UI nothing, as intended); all SQL is confined to
 `db/repository.ts`; `createApp()` takes its repository, its gateway *and* its
@@ -95,11 +99,33 @@ attributable to a change.
   even though the API returns them. Widen the response type in the gateway
   rather than reading them back out of the log.
 
-**6. Minimal eval harness.** A handful of golden cases, run against the current
-prompt, scored. Thin is fine — the point is a baseline before behavior starts
-changing underneath.
-*Done when:* `npm test` or a sibling script reports a score, and a prompt
-regression shows up as a number.
+**6. Minimal eval harness.** ✅ Done. `@chatbot/evals`, run with `npm run eval`
+against a chat-api that is already up. Six golden cases, two of them multi-turn,
+plus three style checks applied to every reply — 25 checks, and the score counts
+checks rather than cases so a failure names itself. Each run appends a line to
+`packages/evals/results.jsonl` stamped with the prompt version and model id
+`/health` reports, so a regression is a `git diff`.
+
+- **It scores the HTTP endpoint, not the gateway.** Everything phase 2 and 3 add
+  — guardrails, tool results, summarization — sits between `/chat` and the
+  model. A baseline taken below them would stay green while the product broke.
+  It also makes the multi-turn cases real conversations: the model answers turn
+  one itself, so the customer's pushback in turn two lands against what it
+  actually said.
+- **A check is a function from a reply to a verdict**, and `judge()` returns one.
+  Mechanical rules stay regexes — paying a model to find em dashes is slower,
+  costs money, and is wrong more often. Sonnet judges while Haiku answers.
+- **`/health` grew a prompt version and model id.** The harness scores a server
+  it did not configure, so a results line stamped from its own environment could
+  name a prompt that server never loaded.
+- **Deliberately outside `npm test`**, and it exits 0 even with failures. The
+  subject is nondeterministic; a threshold here would be a flaky gate, not a
+  signal. One sample per case, so run it twice before believing a drop.
+- Three runs at prompt `20792ec34f34` scored 24, 24 and 22 out of 25, and every
+  failure in all three was the same check: an em dash in a reply that was
+  otherwise correct. Five of eighteen replies had one, against a prompt that
+  forbids them. No judged check has failed yet, so the finding is style, and the
+  fix is in `system.md` rather than here.
 
 ## Phase 2 — Guardrails
 

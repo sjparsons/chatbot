@@ -64,12 +64,23 @@ a deployment change, not a code one.
 
 | Method | Path                       | Description                              |
 | ------ | -------------------------- | ---------------------------------------- |
-| `GET`  | `/health`                  | Liveness check                            |
+| `GET`  | `/health`                  | Liveness, plus the prompt version and model id it is running |
 | `POST` | `/chat`                    | Send a message, stream the reply over SSE |
 | `GET`  | `/sessions`                | Session history, newest first             |
 | `POST` | `/sessions`                | Create an empty session                   |
 | `GET`  | `/sessions/:id`            | Session metadata                          |
 | `GET`  | `/sessions/:id/messages`   | Flattened transcript, oldest first        |
+
+### `GET /health`
+
+```jsonc
+{ "status": "ok", "prompt": "20792ec34f34", "model": "claude-haiku-4-5" }
+```
+
+`prompt` and `model` are there for the eval harness, which scores a server it
+did not configure — it has to ask what it is talking to rather than assume its
+own environment matches. `model` is the configured alias, not the dated id the
+provider returns, because no call has been made yet.
 
 ### `POST /chat`
 

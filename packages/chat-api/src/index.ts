@@ -18,6 +18,9 @@ const app = createApp({
   corsOrigins: config.corsOrigins,
   gateway,
   systemPrompt,
+  // The mock ignores the model ids, so naming one on /health would mislead a
+  // caller into attributing a score to a model that never ran.
+  modelId: modelConfig.provider === "mock" ? "mock" : modelConfig.model,
 });
 
 const server = app.listen(config.port, () => {

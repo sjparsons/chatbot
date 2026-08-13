@@ -68,3 +68,7 @@ explain the why, especially any non-obvious fix.
   code. Expected while the UI and API are on different ports.
 - **The turn log is not a cache.** Nothing reads it on the request path. Don't
   add a read path without deciding the key strategy first.
+- **`npm run eval` is not part of `npm test`** and needs a chat-api already
+  running. It costs money, and it exits 0 even when checks fail — the subject is
+  nondeterministic, so the output is a score to compare against
+  `packages/evals/results.jsonl`, not a pass/fail gate.

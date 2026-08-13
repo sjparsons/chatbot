@@ -83,6 +83,7 @@ describe("chat-api", () => {
       corsOrigins: ["*"],
       gateway,
       systemPrompt,
+      modelId: "test-model",
     });
 
     server = await new Promise<Server>((resolve) => {
@@ -111,9 +112,16 @@ describe("chat-api", () => {
     });
   }
 
-  it("reports health", async () => {
+  // The eval harness stamps its results from this, so the prompt version and
+  // model have to be what this process is actually running, not what the
+  // caller's own environment says.
+  it("reports health, naming the prompt and model it is running", async () => {
     const response = await fetch(`${baseUrl}/health`);
-    await expect(response.json()).resolves.toEqual({ status: "ok" });
+    await expect(response.json()).resolves.toEqual({
+      status: "ok",
+      prompt: "testversion",
+      model: "test-model",
+    });
   });
 
   it("rejects an empty message", async () => {
