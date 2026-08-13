@@ -202,6 +202,31 @@ pasted link rehydrates from `GET /sessions/:id/messages`. Widened beyond the
 original entry: a new `GET /sessions` and a collapsible sidebar list previous
 sessions and let you jump between them.
 
+**21. Show what a turn cost in the UI.** Thread the cost step 5 records from
+`responses` out through chat-api to chat-ui, per turn and per session. Making
+the number visible while iterating is what stops "is this prompt change
+expensive?" being answered by feel.
+*Done when:* a reply shows what it cost, and a refresh does not lose it.
+
+- **The `done` event is the seam.** It already fires after the response row is
+  written and already carries `responseId` and `latencyMs`, so cost and tokens
+  ride along with no new round trip and no new endpoint.
+- **A refresh has to keep it.** `GET /sessions/:id/messages` returns only the
+  transcript today, so cost would vanish on rehydrate — the read path needs the
+  same fields, or the UI shows numbers that evaporate.
+- **Null is not zero, and the UI has to say so.** An aborted or failed turn has
+  no cost; rendering `$0.00` would claim a turn was free rather than unpriced.
+  Same for a model missing from the price table.
+- **Label it an estimate.** It is our arithmetic over the provider's token
+  counts, not a bill. A session total is a `SUM` over the same column.
+
+*Open decision:* who sees it. Showing a retail customer what their question cost
+is a strange product; this is an operator's number. Either gate it behind a dev
+toggle, or keep it out of the customer view entirely and put it in the
+operator-facing surface that step 19's tracing will want anyway. Worth settling
+before it ships, because the wire format differs: a customer-visible number has
+to be safe to expose, an operator one does not.
+
 ---
 
 ## Deferred
