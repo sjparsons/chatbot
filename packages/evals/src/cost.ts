@@ -3,10 +3,11 @@ import type { Logger } from "@chatbot/model-gateway";
 /**
  * What the judging cost. Not what the run cost.
  *
- * The assistant's own inference happens inside chat-api, which reports neither
- * tokens on the `done` event nor token columns in `responses` — that is step 5.
- * So this covers the calls this process makes and nothing else, and the label
- * says so wherever the number is printed.
+ * The assistant's own inference happens inside chat-api, which now records its
+ * own tokens and cost per turn in `responses` — but nothing reports them back
+ * over the wire, and this process only ever sees HTTP. So this covers the calls
+ * it makes itself and nothing else, and the label says so wherever the number
+ * is printed. Joining the two means querying the turn log by prompt version.
  */
 export interface JudgeUsage {
   /** The model that actually answered, read off the response rather than config. */

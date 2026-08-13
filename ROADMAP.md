@@ -123,8 +123,9 @@ checks rather than cases so a failure names itself. Each run appends a line to
   signal. One sample per case, so run it twice before believing a drop.
 - **Each run reports what the judging cost** — token counts and dollars, on
   stdout and in the results line. Grading is about a cent a run. The assistant's
-  own inference is not included and cannot be: nothing on the wire reports it
-  until step 5 puts tokens in `responses`.
+  own inference is not included: step 5 records it per turn in `responses`, but
+  nothing reports it back over the wire and the harness only sees HTTP. Adding
+  the two together means querying the turn log by prompt version.
 - Four runs at prompt `20792ec34f34` scored 24, 24, 22 and 22 out of 25, and
   every failure in all four was the same check: an em dash in a reply that was
   otherwise correct, in roughly a quarter of replies, against a prompt that
